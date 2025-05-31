@@ -1,0 +1,12 @@
+.{
+    .name = .benevolence,
+    .version = "0.0.0",
+    .fingerprint = 0x4f3a2bb2cd14b745,
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
