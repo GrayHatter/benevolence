@@ -35,9 +35,14 @@ pub fn main() !void {
             const gop = try baddies.getOrPut(a, paddr);
             if (!gop.found_existing) {
                 gop.key_ptr.* = try a.dupe(u8, paddr);
-                gop.value_ptr.* = 0;
+                gop.value_ptr.count = 0;
+                gop.value_ptr.group = switch (m.class) {
+                    .nginx => "",
+                    .postfix => "-mail",
+                    .sshd => "-sshd",
+                };
             } else {
-                gop.value_ptr.* += 1;
+                gop.value_ptr.count += 1;
             }
             //std.debug.print("found: {s}\n", .{m});
         }
@@ -45,8 +50,8 @@ pub fn main() !void {
 
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
-        if (kv.value_ptr.* < 2) continue;
-        std.debug.print("nft add element inet filter abuse-mail '{{ {s} }}'\n", .{kv.key_ptr.*});
+        if (kv.value_ptr.count < 2) continue;
+        std.debug.print("nft add element inet filter abuse{s} '{{ {s} }}'\n", .{ kv.value_ptr.group, kv.key_ptr.* });
         //std.debug.print("{s}  for {}'\n", .{ kv.key_ptr.*, kv.value_ptr.* });
     }
     const lap = timer.lap();
@@ -62,8 +67,13 @@ fn mmap(f: std.fs.File) ![]const u8 {
     return std.posix.mmap(null, length, PROT.READ, .{ .TYPE = .SHARED }, f.handle, offset);
 }
 
-var baddies: std.StringHashMapUnmanaged(usize) = .{};
-var goodies: std.StringHashMapUnmanaged(usize) = .{};
+const BanData = struct {
+    group: []const u8,
+    count: usize,
+};
+
+var baddies: std.StringHashMapUnmanaged(BanData) = .{};
+var goodies: std.StringHashMapUnmanaged(BanData) = .{};
 
 const Detection = struct {
     class: Class,
@@ -246,7 +256,7 @@ fn parseLine(mean: Meaningful) !?Line {
     return switch (mean.class) {
         .nginx => {
             return .{
-                .src_addr = try NginxParser.parseAddr(mean.line),
+                .src_addr = NginxParser.parseAddr(mean.line) catch return null,
                 .timestamp = try NginxParser.parseTime(mean.line),
                 .extra = try NginxParser.parseExtra(mean.line),
             };
