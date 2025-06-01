@@ -143,6 +143,10 @@ fn meaningful(line: []const u8) ?Meaningful {
             .class = .postfix,
             .hit = "SASL LOGIN authentication failed",
         },
+        .{
+            .class = .nginx,
+            .hit = "/.env HTTP/",
+        },
     };
 
     inline for (interesting) |dect| {
