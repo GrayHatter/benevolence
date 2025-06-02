@@ -8,6 +8,26 @@ fn usage(arg0: []const u8) noreturn {
     std.posix.exit(1);
 }
 
+const LogFile = struct {
+    file: std.fs.File,
+    fbs: std.io.FixedBufferStream([]const u8),
+
+    pub fn init(f: std.fs.File) !LogFile {
+        return .{ .file = f, .fbs = .{
+            .buffer = try mmap(f),
+            .pos = 0,
+        } };
+    }
+
+    pub fn raze(lf: LogFile) void {
+        lf.file.close();
+
+        return std.posix.munmap(@alignCast(lf.fbs.buffer));
+    }
+};
+
+var file_buf: [32]LogFile = undefined;
+
 pub fn main() !void {
     var debug_a: std.heap.DebugAllocator(.{}) = .{};
     const a = debug_a.allocator();
@@ -16,23 +36,18 @@ pub fn main() !void {
     const arg0 = args.next() orelse usage("wat?!");
 
     // TODO 20 ought to be enough for anyone
-    var file_buf: [32]std.io.FixedBufferStream([]const u8) = undefined;
-    var log_files: std.ArrayListUnmanaged(std.io.FixedBufferStream([]const u8)) = .initBuffer(&file_buf);
+    var log_files: std.ArrayListUnmanaged(LogFile) = .initBuffer(&file_buf);
 
     while (args.next()) |arg| {
         if (std.mem.startsWith(u8, arg, "--")) {
             usage(arg0);
         } else {
-            var in_file = try std.fs.cwd().openFile(arg, .{});
-            defer in_file.close();
-            log_files.appendAssumeCapacity(.{
-                .buffer = try mmap(in_file),
-                .pos = 0,
-            });
+            const in_file = try std.fs.cwd().openFile(arg, .{});
+            log_files.appendAssumeCapacity(try .init(in_file));
         }
     }
     for (log_files.items) |*file| {
-        try readFile(a, file);
+        try readFile(a, &file.fbs);
     }
 
     var vals = baddies.iterator();
@@ -40,6 +55,10 @@ pub fn main() !void {
         if (kv.value_ptr.count < 2) continue;
         std.debug.print("nft add element inet filter abuse{s} '{{ {s} }}'\n", .{ kv.value_ptr.group, kv.key_ptr.* });
         //std.debug.print("{s}  for {}'\n", .{ kv.key_ptr.*, kv.value_ptr.* });
+    }
+
+    while (log_files.pop()) |lf| {
+        lf.raze();
     }
 }
 
