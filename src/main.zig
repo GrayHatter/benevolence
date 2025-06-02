@@ -9,19 +9,44 @@ fn usage(arg0: []const u8) noreturn {
 }
 
 pub fn main() !void {
-    var timer: std.time.Timer = try .start();
     var debug_a: std.heap.DebugAllocator(.{}) = .{};
     const a = debug_a.allocator();
 
     var args = std.process.args();
     const arg0 = args.next() orelse usage("wat?!");
-    const in_filename = args.next() orelse usage(arg0);
-    var in_file = try std.fs.cwd().openFile(in_filename, .{});
-    defer in_file.close();
-    const data = try mmap(in_file);
-    var fbs = std.io.fixedBufferStream(data);
-    var reader = fbs.reader();
 
+    // TODO 20 ought to be enough for anyone
+    var file_buf: [32]std.io.FixedBufferStream([]const u8) = undefined;
+    var log_files: std.ArrayListUnmanaged(std.io.FixedBufferStream([]const u8)) = .initBuffer(&file_buf);
+
+    while (args.next()) |arg| {
+        if (std.mem.startsWith(u8, arg, "--")) {
+            usage(arg0);
+        } else {
+            var in_file = try std.fs.cwd().openFile(arg, .{});
+            defer in_file.close();
+            log_files.appendAssumeCapacity(.{
+                .buffer = try mmap(in_file),
+                .pos = 0,
+            });
+        }
+    }
+    for (log_files.items) |*file| {
+        try readFile(a, file);
+    }
+
+    var vals = baddies.iterator();
+    while (vals.next()) |kv| {
+        if (kv.value_ptr.count < 2) continue;
+        std.debug.print("nft add element inet filter abuse{s} '{{ {s} }}'\n", .{ kv.value_ptr.group, kv.key_ptr.* });
+        //std.debug.print("{s}  for {}'\n", .{ kv.key_ptr.*, kv.value_ptr.* });
+    }
+}
+
+fn readFile(a: Allocator, fbs: *std.io.FixedBufferStream([]const u8)) !void {
+    var timer: std.time.Timer = try .start();
+
+    var reader = fbs.reader();
     var line_count: usize = 0;
 
     var line_buf: [0xffff]u8 = undefined;
@@ -48,12 +73,6 @@ pub fn main() !void {
         }
     }
 
-    var vals = baddies.iterator();
-    while (vals.next()) |kv| {
-        if (kv.value_ptr.count < 2) continue;
-        std.debug.print("nft add element inet filter abuse{s} '{{ {s} }}'\n", .{ kv.value_ptr.group, kv.key_ptr.* });
-        //std.debug.print("{s}  for {}'\n", .{ kv.key_ptr.*, kv.value_ptr.* });
-    }
     const lap = timer.lap();
     std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
 }
