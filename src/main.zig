@@ -1,8 +1,8 @@
 fn usage(arg0: []const u8) noreturn {
     //
     std.debug.print(
-        \\ you're holding it wrong
-        \\usage: {s} [filename]
+        \\    you're holding it wrong
+        \\  usage: {s} [filename]
         \\
     , .{arg0});
     std.posix.exit(1);
@@ -29,6 +29,12 @@ const LogFile = struct {
 var file_buf: [32]LogFile = undefined;
 
 pub fn main() !void {
+    // stdout, not any debugging messages.
+    const stdout_file = std.io.getStdOut().writer();
+    var bw = std.io.bufferedWriter(stdout_file);
+    defer bw.flush() catch @panic("final flush failed");
+    const stdout = bw.writer();
+
     var debug_a: std.heap.DebugAllocator(.{}) = .{};
     const a = debug_a.allocator();
 
@@ -53,8 +59,7 @@ pub fn main() !void {
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
         if (kv.value_ptr.count < 2) continue;
-        std.debug.print("nft add element inet filter abuse{s} '{{ {s} }}'\n", .{ kv.value_ptr.group, kv.key_ptr.* });
-        //std.debug.print("{s}  for {}'\n", .{ kv.key_ptr.*, kv.value_ptr.* });
+        stdout.print("nft add element inet filter abuse{s} '{{ {s} }}'\n", .{ kv.value_ptr.group, kv.key_ptr.* });
     }
 
     while (log_files.pop()) |lf| {
