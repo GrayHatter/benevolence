@@ -1,3 +1,7 @@
+const example_config: []const u8 =
+    \\
+;
+
 fn usage(arg0: []const u8) noreturn {
     //
     std.debug.print(
@@ -29,7 +33,6 @@ const LogFile = struct {
 var file_buf: [32]LogFile = undefined;
 
 pub fn main() !void {
-    // stdout, not any debugging messages.
     const stdout_file = std.io.getStdOut().writer();
     var bw = std.io.bufferedWriter(stdout_file);
     defer bw.flush() catch @panic("final flush failed");
@@ -59,7 +62,7 @@ pub fn main() !void {
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
         if (kv.value_ptr.count < 2) continue;
-        stdout.print("nft add element inet filter abuse{s} '{{ {s} }}'\n", .{ kv.value_ptr.group, kv.key_ptr.* });
+        try stdout.print("nft add element inet filter abuse{s} '{{ {s} }}'\n", .{ kv.value_ptr.group, kv.key_ptr.* });
     }
 
     while (log_files.pop()) |lf| {
@@ -86,7 +89,7 @@ fn readFile(a: Allocator, fbs: *std.io.FixedBufferStream([]const u8)) !void {
                 gop.key_ptr.* = try a.dupe(u8, paddr);
                 gop.value_ptr.count = 0;
                 gop.value_ptr.group = switch (m.class) {
-                    .nginx => "",
+                    .nginx => "-http",
                     .postfix => "-mail",
                     .sshd => "-sshd",
                 };
