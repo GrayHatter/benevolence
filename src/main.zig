@@ -159,9 +159,17 @@ pub fn main() !void {
         try w.print(", {s}", .{kv.key_ptr.*});
     }
 
-    if (banlist_http.items.len > 2) try stdout.print("nft add element inet filter abuse-http '{{ {s} }}'\n", .{banlist_http.items[2..]});
-    if (banlist_mail.items.len > 2) try stdout.print("nft add element inet filter abuse-mail '{{ {s} }}'\n", .{banlist_mail.items[2..]});
-    if (banlist_sshd.items.len > 2) try stdout.print("nft add element inet filter abuse-sshd '{{ {s} }}'\n", .{banlist_sshd.items[2..]});
+    if (banlist_http.items.len > 2) {
+        try stdout.print("nft add element inet filter abuse-http '{{ {s} }}'\n", .{banlist_http.items[2..]});
+    }
+
+    if (banlist_mail.items.len > 2) {
+        try stdout.print("nft add element inet filter abuse-mail '{{ {s} }}'\n", .{banlist_mail.items[2..]});
+    }
+
+    if (banlist_sshd.items.len > 2) {
+        try stdout.print("nft add element inet filter abuse-sshd '{{ {s} }}'\n", .{banlist_sshd.items[2..]});
+    }
 
     while (log_files.pop()) |lf| {
         lf.raze();
