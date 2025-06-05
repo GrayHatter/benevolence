@@ -232,6 +232,14 @@ fn meaningful(line: []const u8) ?Meaningful {
             .class = .nginx,
             .hit = "/.env HTTP/",
         },
+        .{
+            .class = .sshd,
+            .hit = ": Connection closed by invalid user",
+        },
+        .{
+            .class = .sshd,
+            .hit = ": Invalid user",
+        },
     };
 
     inline for (interesting) |dect| {

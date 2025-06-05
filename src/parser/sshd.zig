@@ -2,6 +2,32 @@ pub fn parseAddr(line: []const u8) !Addr {
     if (indexOf(u8, line, "Connection from ")) |i| {
         return try Addr.parse(line[i + 16 ..]);
     }
+    // Connection closed by invalid user ecoub 127.0.0.1 port 48556 [preauth]
+    if (indexOf(u8, line, "Connection closed by invalid user ")) |i| {
+        var start: usize = i + 34;
+        while (start < line.len and line[start] != ' ') : (start += 1) {}
+        start += 1;
+        var end: usize = start;
+        while (end < line.len) : (end += 1) {
+            switch (line[end]) {
+                '0'...'9', 'a'...'f', 'A'...'F', '.', ':' => continue,
+                else => break,
+            }
+        }
+        if (start < line.len and end < line.len) {
+            return try Addr.parse(line[start..end]);
+        }
+    }
+    //Invalid user ktabn from 127.0.0.1 port 55394
+    if (indexOf(u8, line, "Invalid user ")) |i| {
+        var start: usize = i + 13;
+        if (indexOf(u8, line[start..], " from ")) |j| {
+            start += j + 6;
+            if (indexOf(u8, line[start..], " port ")) |end| {
+                return try Addr.parse(line[start..end][0..end]);
+            }
+        }
+    }
     return error.AddrNotFound;
 }
 
