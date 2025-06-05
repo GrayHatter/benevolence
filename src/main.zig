@@ -238,27 +238,6 @@ const NginxParser = struct {
     }
 };
 
-const PostfixParser = struct {
-    pub fn parseAddr(line: []const u8) !Addr {
-        if (std.mem.indexOf(u8, line, "unknown[")) |i| {
-            if (std.mem.indexOfScalarPos(u8, line, i, ']')) |j| {
-                return try Addr.parse(line[i + 8 .. j]);
-            }
-        }
-        return error.AddrNotFound;
-    }
-
-    pub fn parseTime(line: []const u8) !i64 {
-        _ = line;
-        return 0;
-    }
-
-    pub fn parseExtra(line: []const u8) ![]const u8 {
-        _ = line;
-        return "";
-    }
-};
-
 const SshdParser = struct {
     pub fn parseAddr(line: []const u8) !Addr {
         if (std.mem.indexOf(u8, line, "Connection from ")) |i| {
@@ -302,7 +281,7 @@ fn meaningful(line: []const u8) ?Meaningful {
     }
 }
 
-const Addr = union(enum) {
+pub const Addr = union(enum) {
     ipv4: [4]u8,
     ipv6: [16]u8,
 
@@ -395,9 +374,9 @@ fn parseLine(mean: Meaningful) !?Line {
 
         .postfix => {
             return .{
-                .src_addr = PostfixParser.parseAddr(mean.line) catch return null,
-                .timestamp = try PostfixParser.parseTime(mean.line),
-                .extra = try PostfixParser.parseExtra(mean.line),
+                .src_addr = parser.postfix.parseAddr(mean.line) catch return null,
+                .timestamp = try parser.postfix.parseTime(mean.line),
+                .extra = try parser.postfix.parseExtra(mean.line),
             };
         },
         .sshd => {
@@ -442,6 +421,8 @@ test parseLine {
         try std.testing.expectEqualDeep(hit, parseLine(line));
     }
 }
+
+const parser = @import("parser.zig");
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
