@@ -126,29 +126,28 @@ const LogFile = struct {
         }
     }
 
-    pub fn lineFromFile(lf: *LogFile) !?[]const u8 {
+    pub fn remap(lf: *LogFile) !void {
         const meta = try lf.file.metadata();
         if (meta.size() < lf.meta.size()) return error.Truncated;
-        if (meta.size() == lf.meta.size() and lf.fbs.pos == meta.size()) return null;
-        lf.meta = meta;
-        var reader = lf.file.reader();
-        if (try reader.readUntilDelimiterOrEof(&lf.line_buffer, '\n')) |data| {
-            lf.fbs.pos += data.len;
-            return data;
+        if (meta.size() == lf.meta.size()) {
+            lf.meta = meta;
+            return;
         }
-        return null;
+        lf.fbs.buffer = try std.posix.mremap(
+            @alignCast(@constCast(lf.fbs.buffer.ptr)),
+            lf.fbs.buffer.len,
+            meta.size(),
+            .{ .MAYMOVE = true },
+            null,
+        );
+        lf.meta = meta;
     }
 
     pub fn line(lf: *LogFile) !?[]const u8 {
-        if (lf.fbs.buffer.len == 0) return lf.lineFromFile();
+        if (lf.fbs.pos == lf.fbs.buffer.len) try lf.remap();
+
         var reader = lf.fbs.reader();
-        return try reader.readUntilDelimiterOrEof(&lf.line_buffer, '\n') orelse {
-            std.posix.munmap(@alignCast(lf.fbs.buffer));
-            lf.fbs.buffer.len = 0;
-            if (!lf.watch) return null;
-            try lf.file.seekTo(lf.fbs.pos);
-            return lf.lineFromFile();
-        };
+        return try reader.readUntilDelimiterOrEof(&lf.line_buffer, '\n');
     }
 };
 
@@ -199,12 +198,49 @@ pub fn main() !void {
         }
     }
     for (log_files.items) |*file| {
-        _ = try readFile(a, file);
+        try readFile(a, file);
     }
 
+    try printBanList(a, stdout.any());
+    try bw.flush();
+
+    var count: usize = 0;
+    for (log_files.items) |*lf| {
+        if (!lf.watch) {
+            lf.raze();
+        } else count += 1;
+    }
+
+    var banned: usize = baddies.count();
+    while (count > 0) {
+        for (log_files.items) |*lf| {
+            if (!lf.watch) continue;
+            readFile(a, lf) catch |err| {
+                std.debug.print("err {}\n", .{err});
+                lf.raze();
+                count -|= 1;
+                continue;
+            };
+        }
+        if (baddies.count() > banned) {
+            try printBanList(a, stdout.any());
+            try bw.flush();
+            banned = baddies.count();
+        }
+        std.time.sleep(1 * 1000 * 1000 * 1000);
+    }
+}
+
+fn printBanList(a: Allocator, stdout: std.io.AnyWriter) !void {
     var banlist_http: std.ArrayListUnmanaged(u8) = .{};
     var banlist_mail: std.ArrayListUnmanaged(u8) = .{};
     var banlist_sshd: std.ArrayListUnmanaged(u8) = .{};
+
+    defer {
+        banlist_http.deinit(a);
+        banlist_mail.deinit(a);
+        banlist_sshd.deinit(a);
+    }
 
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
@@ -228,33 +264,9 @@ pub fn main() !void {
     if (banlist_sshd.items.len > 2) {
         try stdout.print("nft add element inet filter abuse-sshd '{{ {s} }}'\n", .{banlist_sshd.items[2..]});
     }
-    try bw.flush();
-
-    var count: usize = 0;
-    for (log_files.items) |*lf| {
-        if (!lf.watch) {
-            lf.raze();
-        } else count += 1;
-    }
-
-    while (count > 0) {
-        for (log_files.items) |*lf| {
-            if (!lf.watch) continue;
-            const new = readFile(a, lf) catch |err| {
-                std.debug.print("err {}\n", .{err});
-
-                lf.raze();
-                count -|= 1;
-                continue;
-            };
-            if (new) |n| std.debug.print("new ban {s}\n", .{n});
-        }
-
-        std.time.sleep(1 * 1000 * 1000 * 1000);
-    }
 }
 
-fn readFile(a: Allocator, logfile: *LogFile) !?[]const u8 {
+fn readFile(a: Allocator, logfile: *LogFile) !void {
     var timer: std.time.Timer = try .start();
     var line_count: usize = 0;
 
@@ -269,7 +281,6 @@ fn readFile(a: Allocator, logfile: *LogFile) !?[]const u8 {
                 gop.key_ptr.* = try a.dupe(u8, paddr);
                 gop.value_ptr.count = 1;
                 gop.value_ptr.class = m.class;
-                return gop.key_ptr.*;
             } else {
                 gop.value_ptr.count += 1;
             }
@@ -279,7 +290,6 @@ fn readFile(a: Allocator, logfile: *LogFile) !?[]const u8 {
 
     const lap = timer.lap();
     std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
-    return null;
 }
 
 fn mmap(f: std.fs.File) ![]const u8 {
