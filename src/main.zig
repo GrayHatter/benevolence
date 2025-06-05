@@ -321,7 +321,7 @@ const Timestamp = packed struct(i64) {
     }
 };
 
-const Line = struct {
+pub const Line = struct {
     src_addr: Addr,
     timestamp: i64,
     extra: []const u8,
@@ -329,28 +329,9 @@ const Line = struct {
 
 fn parseLine(mean: Meaningful) !?Line {
     return switch (mean.class) {
-        .nginx => {
-            return .{
-                .src_addr = parser.nginx.parseAddr(mean.line) catch return null,
-                .timestamp = try parser.nginx.parseTime(mean.line),
-                .extra = try parser.nginx.parseExtra(mean.line),
-            };
-        },
-
-        .postfix => {
-            return .{
-                .src_addr = parser.postfix.parseAddr(mean.line) catch return null,
-                .timestamp = try parser.postfix.parseTime(mean.line),
-                .extra = try parser.postfix.parseExtra(mean.line),
-            };
-        },
-        .sshd => {
-            return .{
-                .src_addr = try parser.sshd.parseAddr(mean.line),
-                .timestamp = try parser.sshd.parseTime(mean.line),
-                .extra = try parser.sshd.parseExtra(mean.line),
-            };
-        },
+        .nginx => parser.nginx.parseLine(mean.line),
+        .postfix => parser.postfix.parseLine(mean.line),
+        .sshd => parser.sshd.parseLine(mean.line),
     };
 }
 

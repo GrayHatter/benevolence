@@ -17,7 +17,16 @@ pub fn parseExtra(line: []const u8) ![]const u8 {
     return "";
 }
 
+pub fn parseLine(line: []const u8) !?Line {
+    return .{
+        .src_addr = parseAddr(line) catch return null,
+        .timestamp = try parseTime(line),
+        .extra = try parseExtra(line),
+    };
+}
+
 const std = @import("std");
 const indexOf = std.mem.indexOf;
 const indexOfScalarPos = std.mem.indexOfScalarPos;
 const Addr = @import("../main.zig").Addr;
+const Line = @import("../main.zig").Line;
