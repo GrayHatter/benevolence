@@ -4,62 +4,54 @@ const nft_example_config: []const u8 =
     \\        type ipv4_addr
     \\        flags interval, timeout
     \\        auto-merge
-    \\        elements = { }
     \\    }
     \\    set abuse-http {
     \\        type ipv4_addr
     \\        flags interval, timeout
     \\        auto-merge
-    \\        elements = { }
     \\    }
     \\    set abuse-mail {
     \\        type ipv4_addr
     \\        flags interval, timeout
     \\        auto-merge
-    \\        elements = { }
     \\    }
     \\    set abuse-sshd {
     \\        type ipv4_addr
     \\        flags interval, timeout
     \\        auto-merge
-    \\        elements = { }
     \\    }
     \\
     \\    set abuse-v6 {
     \\        type ipv6_addr
     \\        flags interval, timeout
     \\        auto-merge
-    \\        elements = { }
     \\    }
     \\    set abuse-http-v6 {
     \\        type ipv6_addr
     \\        flags interval, timeout
     \\        auto-merge
-    \\        elements = { }
     \\    }
     \\    set abuse-mail-v6 {
     \\        type ipv6_addr
     \\        flags interval, timeout
     \\        auto-merge
-    \\        elements = { }
     \\    }
     \\    set abuse-sshd-v6 {
     \\        type ipv6_addr
     \\        flags interval, timeout
     \\        auto-merge
-    \\        elements = { }
     \\    }
     \\
     \\
     \\    chain input {
     \\        type filter hook input priority 0; policy accept;
     \\
-    \\        ip saddr @abuse tcp counter drop
+    \\        ip saddr @abuse counter drop
     \\        ip saddr @abuse-http tcp dport { 80, 443 } counter reject with icmpx 3
     \\        ip saddr @abuse-mail tcp dport { 25, 143, 465, 587, 993, } counter reject with icmpx 3
     \\        ip saddr @abuse-sshd tcp dport 22 counter drop
     \\
-    \\        ip6 saddr @abuse tcp counter drop
+    \\        ip6 saddr @abuse-v6 counter drop
     \\        ip6 saddr @abuse-http-v6 tcp dport { 80, 443 } counter reject with icmpx 3
     \\        ip6 saddr @abuse-mail-v6 tcp dport { 25, 143, 465, 587, 993, } counter reject with icmpx 3
     \\        ip6 saddr @abuse-sshd-v6 tcp dport 22 counter drop
