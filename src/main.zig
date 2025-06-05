@@ -1,12 +1,94 @@
-const example_config: []const u8 =
+const nft_example_config: []const u8 =
+    \\table inet filter {
+    \\    set abuse {
+    \\        type ipv4_addr
+    \\        flags interval, timeout
+    \\        auto-merge
+    \\        elements = { }
+    \\    }
+    \\    set abuse-http {
+    \\        type ipv4_addr
+    \\        flags interval, timeout
+    \\        auto-merge
+    \\        elements = { }
+    \\    }
+    \\    set abuse-mail {
+    \\        type ipv4_addr
+    \\        flags interval, timeout
+    \\        auto-merge
+    \\        elements = { }
+    \\    }
+    \\    set abuse-sshd {
+    \\        type ipv4_addr
+    \\        flags interval, timeout
+    \\        auto-merge
+    \\        elements = { }
+    \\    }
+    \\
+    \\    set abuse-v6 {
+    \\        type ipv6_addr
+    \\        flags interval, timeout
+    \\        auto-merge
+    \\        elements = { }
+    \\    }
+    \\    set abuse-http-v6 {
+    \\        type ipv6_addr
+    \\        flags interval, timeout
+    \\        auto-merge
+    \\        elements = { }
+    \\    }
+    \\    set abuse-mail-v6 {
+    \\        type ipv6_addr
+    \\        flags interval, timeout
+    \\        auto-merge
+    \\        elements = { }
+    \\    }
+    \\    set abuse-sshd-v6 {
+    \\        type ipv6_addr
+    \\        flags interval, timeout
+    \\        auto-merge
+    \\        elements = { }
+    \\    }
+    \\
+    \\
+    \\    chain input {
+    \\        type filter hook input priority 0; policy accept;
+    \\
+    \\        ip saddr @abuse tcp counter drop
+    \\        ip saddr @abuse-http tcp dport { 80, 443 } counter reject with icmpx 3
+    \\        ip saddr @abuse-mail tcp dport { 25, 143, 465, 587, 993, } counter reject with icmpx 3
+    \\        ip saddr @abuse-sshd tcp dport 22 counter drop
+    \\
+    \\        ip6 saddr @abuse tcp counter drop
+    \\        ip6 saddr @abuse-http-v6 tcp dport { 80, 443 } counter reject with icmpx 3
+    \\        ip6 saddr @abuse-mail-v6 tcp dport { 25, 143, 465, 587, 993, } counter reject with icmpx 3
+    \\        ip6 saddr @abuse-sshd-v6 tcp dport 22 counter drop
+    \\
+    \\        iifname "lo" accept comment "Accept any localhost traffic"
+    \\        ct state { 0x2, 0x4 } accept comment "Accept traffic originated from us"
+    \\        ip protocol 1 icmp type { 0, 3, 8, 11, 12 } accept comment "Accept ICMP"
+    \\    }
+    \\
+    \\    chain forward {
+    \\        type filter hook forward priority 0; policy accept;
+    \\    }
+    \\
+    \\    chain output {
+    \\        type filter hook output priority 0; policy accept;
+    \\    }
+    \\}
     \\
 ;
 
 fn usage(arg0: []const u8) noreturn {
     //
     std.debug.print(
-        \\    you're holding it wrong
+        \\error: you're holding it wrong
         \\  usage: {s} [filename]
+        \\
+        \\Options:
+        \\
+        \\    --example       Print an example nft config
         \\
     , .{arg0});
     std.posix.exit(1);
@@ -48,8 +130,11 @@ pub fn main() !void {
     var log_files: std.ArrayListUnmanaged(LogFile) = .initBuffer(&file_buf);
 
     while (args.next()) |arg| {
-        if (std.mem.startsWith(u8, arg, "--")) {
-            usage(arg0);
+        if (startsWith(u8, arg, "--")) {
+            if (eql(u8, arg, "--example")) {
+                try stdout.writeAll(nft_example_config);
+                return;
+            } else usage(arg0);
         } else {
             const in_file = try std.fs.cwd().openFile(arg, .{});
             log_files.appendAssumeCapacity(try .init(in_file));
@@ -365,3 +450,5 @@ const indexOfAny = std.mem.indexOfAny;
 const indexOfScalar = std.mem.indexOfScalar;
 //const indexOfScalarPos = std.mem.indexOfScalarPos;
 const parseInt = std.fmt.parseInt;
+const startsWith = std.mem.startsWith;
+const eql = std.mem.eql;
