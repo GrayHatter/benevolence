@@ -88,7 +88,9 @@ fn usage(arg0: []const u8) noreturn {
         \\
         \\Options:
         \\
-        \\    --example       Print an example nft config
+        \\    --example                 Print an example nft config then exit
+        \\    --watch     [filename]    Process and then tail for new data
+        \\    --watch-all [filename]    Process and then tail all following logs
         \\
     , .{arg0});
     std.posix.exit(1);
@@ -97,22 +99,60 @@ fn usage(arg0: []const u8) noreturn {
 const LogFile = struct {
     file: std.fs.File,
     fbs: std.io.FixedBufferStream([]const u8),
+    watch: bool,
+    meta: std.fs.File.Metadata,
+    line_buffer: [4096]u8 = undefined,
 
-    pub fn init(f: std.fs.File) !LogFile {
-        return .{ .file = f, .fbs = .{
-            .buffer = try mmap(f),
-            .pos = 0,
-        } };
+    pub fn init(filename: []const u8, watch: bool) !LogFile {
+        const f = try std.fs.cwd().openFile(filename, .{});
+        const lf: LogFile = .{
+            .file = f,
+            .fbs = .{
+                .buffer = try mmap(f),
+                .pos = 0,
+            },
+            .watch = watch,
+            .meta = try f.metadata(),
+        };
+
+        return lf;
     }
 
-    pub fn raze(lf: LogFile) void {
+    pub fn raze(lf: *LogFile) void {
+        lf.watch = false;
         lf.file.close();
+        if (lf.fbs.buffer.len > 0) {
+            return std.posix.munmap(@alignCast(lf.fbs.buffer));
+        }
+    }
 
-        return std.posix.munmap(@alignCast(lf.fbs.buffer));
+    pub fn lineFromFile(lf: *LogFile) !?[]const u8 {
+        const meta = try lf.file.metadata();
+        if (meta.size() < lf.meta.size()) return error.Truncated;
+        if (meta.size() == lf.meta.size() and lf.fbs.pos == meta.size()) return null;
+        lf.meta = meta;
+        var reader = lf.file.reader();
+        if (try reader.readUntilDelimiterOrEof(&lf.line_buffer, '\n')) |data| {
+            lf.fbs.pos += data.len;
+            return data;
+        }
+        return null;
+    }
+
+    pub fn line(lf: *LogFile) !?[]const u8 {
+        if (lf.fbs.buffer.len == 0) return lf.lineFromFile();
+        var reader = lf.fbs.reader();
+        return try reader.readUntilDelimiterOrEof(&lf.line_buffer, '\n') orelse {
+            std.posix.munmap(@alignCast(lf.fbs.buffer));
+            lf.fbs.buffer.len = 0;
+            if (!lf.watch) return null;
+            try lf.file.seekTo(lf.fbs.pos);
+            return lf.lineFromFile();
+        };
     }
 };
 
-var file_buf: [32]LogFile = undefined;
+var file_buf: [64]LogFile = undefined;
 
 pub fn main() !void {
     const stdout_file = std.io.getStdOut().writer();
@@ -129,19 +169,37 @@ pub fn main() !void {
     // TODO 20 ought to be enough for anyone
     var log_files: std.ArrayListUnmanaged(LogFile) = .initBuffer(&file_buf);
 
+    var default_watch: bool = false;
+
     while (args.next()) |arg| {
+        if (log_files.items.len >= file_buf.len) {
+            std.debug.print("PANIC: too many log files given\n", .{});
+            usage(arg0);
+        }
         if (startsWith(u8, arg, "--")) {
             if (eql(u8, arg, "--example")) {
                 try stdout.writeAll(nft_example_config);
                 return;
+            } else if (eql(u8, arg, "--watch")) {
+                const filename = args.next() orelse {
+                    std.debug.print("error: --watch requires a filename\n", .{});
+                    usage(arg0);
+                };
+                log_files.appendAssumeCapacity(try .init(filename, true));
+            } else if (eql(u8, arg, "--watch-all")) {
+                const filename = args.next() orelse {
+                    std.debug.print("error: --watch-all requires a filename\n", .{});
+                    usage(arg0);
+                };
+                log_files.appendAssumeCapacity(try .init(filename, true));
+                default_watch = true;
             } else usage(arg0);
         } else {
-            const in_file = try std.fs.cwd().openFile(arg, .{});
-            log_files.appendAssumeCapacity(try .init(in_file));
+            log_files.appendAssumeCapacity(try .init(arg, default_watch));
         }
     }
     for (log_files.items) |*file| {
-        try readFile(a, &file.fbs);
+        _ = try readFile(a, file);
     }
 
     var banlist_http: std.ArrayListUnmanaged(u8) = .{};
@@ -170,21 +228,37 @@ pub fn main() !void {
     if (banlist_sshd.items.len > 2) {
         try stdout.print("nft add element inet filter abuse-sshd '{{ {s} }}'\n", .{banlist_sshd.items[2..]});
     }
+    try bw.flush();
 
-    while (log_files.pop()) |lf| {
-        lf.raze();
+    var count: usize = 0;
+    for (log_files.items) |*lf| {
+        if (!lf.watch) {
+            lf.raze();
+        } else count += 1;
+    }
+
+    while (count > 0) {
+        for (log_files.items) |*lf| {
+            if (!lf.watch) continue;
+            const new = readFile(a, lf) catch |err| {
+                std.debug.print("err {}\n", .{err});
+
+                lf.raze();
+                count -|= 1;
+                continue;
+            };
+            if (new) |n| std.debug.print("new ban {s}\n", .{n});
+        }
+
+        std.time.sleep(1 * 1000 * 1000 * 1000);
     }
 }
 
-fn readFile(a: Allocator, fbs: *std.io.FixedBufferStream([]const u8)) !void {
+fn readFile(a: Allocator, logfile: *LogFile) !?[]const u8 {
     var timer: std.time.Timer = try .start();
-
-    var reader = fbs.reader();
     var line_count: usize = 0;
 
-    var line_buf: [0xffff]u8 = undefined;
-    var line_ = try reader.readUntilDelimiterOrEof(&line_buf, '\n');
-    while (line_) |line| : (line_ = try reader.readUntilDelimiterOrEof(&line_buf, '\n')) {
+    while (try logfile.line()) |line| {
         line_count += 1;
         if (meaningful(line)) |m| {
             const res = try parseLine(m) orelse continue;
@@ -193,8 +267,9 @@ fn readFile(a: Allocator, fbs: *std.io.FixedBufferStream([]const u8)) !void {
             const gop = try baddies.getOrPut(a, paddr);
             if (!gop.found_existing) {
                 gop.key_ptr.* = try a.dupe(u8, paddr);
-                gop.value_ptr.count = 0;
+                gop.value_ptr.count = 1;
                 gop.value_ptr.class = m.class;
+                return gop.key_ptr.*;
             } else {
                 gop.value_ptr.count += 1;
             }
@@ -204,13 +279,13 @@ fn readFile(a: Allocator, fbs: *std.io.FixedBufferStream([]const u8)) !void {
 
     const lap = timer.lap();
     std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
+    return null;
 }
 
 fn mmap(f: std.fs.File) ![]const u8 {
     const PROT = std.posix.PROT;
 
-    try f.seekFromEnd(0);
-    const length = try f.getPos();
+    const length = try f.getEndPos();
     const offset = 0;
     return std.posix.mmap(null, length, PROT.READ, .{ .TYPE = .SHARED }, f.handle, offset);
 }

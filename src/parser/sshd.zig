@@ -24,7 +24,7 @@ pub fn parseAddr(line: []const u8) !Addr {
         if (indexOf(u8, line[start..], " from ")) |j| {
             start += j + 6;
             if (indexOf(u8, line[start..], " port ")) |end| {
-                return try Addr.parse(line[start..end][0..end]);
+                return try Addr.parse(line[start..][0..end]);
             }
         }
     }
