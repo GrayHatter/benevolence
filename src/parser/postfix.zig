@@ -1,7 +1,7 @@
 pub fn parseAddr(line: []const u8) !Addr {
-    if (indexOf(u8, line, "unknown[")) |i| {
-        if (indexOfScalarPos(u8, line, i, ']')) |j| {
-            return try Addr.parse(line[i + 8 .. j]);
+    if (indexOf(u8, line, "]: SASL PLAIN") orelse indexOf(u8, line, "]: SASL LOGIN")) |j| {
+        if (lastIndexOf(u8, line[0..j], "[")) |i| {
+            return try Addr.parse(line[i + 1 .. j]);
         }
     }
     return error.AddrNotFound;
@@ -27,6 +27,7 @@ pub fn parseLine(line: []const u8) !?Line {
 
 const std = @import("std");
 const indexOf = std.mem.indexOf;
+const lastIndexOf = std.mem.lastIndexOf;
 const indexOfScalarPos = std.mem.indexOfScalarPos;
 const Addr = @import("../main.zig").Addr;
 const Line = @import("../main.zig").Line;
