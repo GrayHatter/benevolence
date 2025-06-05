@@ -222,27 +222,6 @@ const Meaningful = struct {
     line: []const u8,
 };
 
-const NginxParser = struct {};
-
-const SshdParser = struct {
-    pub fn parseAddr(line: []const u8) !Addr {
-        if (std.mem.indexOf(u8, line, "Connection from ")) |i| {
-            return try Addr.parse(line[i + 16 ..]);
-        }
-        return error.AddrNotFound;
-    }
-
-    pub fn parseTime(line: []const u8) !i64 {
-        _ = line;
-        return 0;
-    }
-
-    pub fn parseExtra(line: []const u8) ![]const u8 {
-        _ = line;
-        return "";
-    }
-};
-
 fn meaningful(line: []const u8) ?Meaningful {
     const interesting: []const Detection = &[_]Detection{
         .{
@@ -367,9 +346,9 @@ fn parseLine(mean: Meaningful) !?Line {
         },
         .sshd => {
             return .{
-                .src_addr = try SshdParser.parseAddr(mean.line),
-                .timestamp = try SshdParser.parseTime(mean.line),
-                .extra = try SshdParser.parseExtra(mean.line),
+                .src_addr = try parser.sshd.parseAddr(mean.line),
+                .timestamp = try parser.sshd.parseTime(mean.line),
+                .extra = try parser.sshd.parseExtra(mean.line),
             };
         },
     };
