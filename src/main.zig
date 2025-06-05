@@ -144,11 +144,24 @@ pub fn main() !void {
         try readFile(a, &file.fbs);
     }
 
+    var banlist_http: std.ArrayListUnmanaged(u8) = .{};
+    var banlist_mail: std.ArrayListUnmanaged(u8) = .{};
+    var banlist_sshd: std.ArrayListUnmanaged(u8) = .{};
+
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
         if (kv.value_ptr.count < 2) continue;
-        try stdout.print("nft add element inet filter abuse{s} '{{ {s} }}'\n", .{ kv.value_ptr.group, kv.key_ptr.* });
+        var w = switch (kv.value_ptr.class) {
+            .nginx => &banlist_http.writer(a),
+            .postfix => &banlist_mail.writer(a),
+            .sshd => &banlist_sshd.writer(a),
+        };
+        try w.print(", {s}", .{kv.key_ptr.*});
     }
+
+    if (banlist_http.items.len > 2) try stdout.print("nft add element inet filter abuse-http '{{ {s} }}'\n", .{banlist_http.items[2..]});
+    if (banlist_mail.items.len > 2) try stdout.print("nft add element inet filter abuse-mail '{{ {s} }}'\n", .{banlist_mail.items[2..]});
+    if (banlist_sshd.items.len > 2) try stdout.print("nft add element inet filter abuse-sshd '{{ {s} }}'\n", .{banlist_sshd.items[2..]});
 
     while (log_files.pop()) |lf| {
         lf.raze();
@@ -173,11 +186,7 @@ fn readFile(a: Allocator, fbs: *std.io.FixedBufferStream([]const u8)) !void {
             if (!gop.found_existing) {
                 gop.key_ptr.* = try a.dupe(u8, paddr);
                 gop.value_ptr.count = 0;
-                gop.value_ptr.group = switch (m.class) {
-                    .nginx => "-http",
-                    .postfix => "-mail",
-                    .sshd => "-sshd",
-                };
+                gop.value_ptr.class = m.class;
             } else {
                 gop.value_ptr.count += 1;
             }
@@ -199,7 +208,7 @@ fn mmap(f: std.fs.File) ![]const u8 {
 }
 
 const BanData = struct {
-    group: []const u8,
+    class: Class,
     count: usize,
 };
 
