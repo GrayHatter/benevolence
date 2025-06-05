@@ -1,6 +1,6 @@
 pub fn parseAddr(line: []const u8) !Addr {
-    if (std.mem.indexOf(u8, line, "unknown[")) |i| {
-        if (std.mem.indexOfScalarPos(u8, line, i, ']')) |j| {
+    if (indexOf(u8, line, "unknown[")) |i| {
+        if (indexOfScalarPos(u8, line, i, ']')) |j| {
             return try Addr.parse(line[i + 8 .. j]);
         }
     }
@@ -18,4 +18,6 @@ pub fn parseExtra(line: []const u8) ![]const u8 {
 }
 
 const std = @import("std");
+const indexOf = std.mem.indexOf;
+const indexOfScalarPos = std.mem.indexOfScalarPos;
 const Addr = @import("../main.zig").Addr;

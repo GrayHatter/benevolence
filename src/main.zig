@@ -222,21 +222,7 @@ const Meaningful = struct {
     line: []const u8,
 };
 
-const NginxParser = struct {
-    pub fn parseAddr(line: []const u8) !Addr {
-        return Addr.parse(line[0 .. indexOfScalar(u8, line, ' ') orelse return error.InvalidLogLine]);
-    }
-
-    pub fn parseTime(line: []const u8) !i64 {
-        _ = line;
-        return 0;
-    }
-
-    pub fn parseExtra(line: []const u8) ![]const u8 {
-        _ = line;
-        return "";
-    }
-};
+const NginxParser = struct {};
 
 const SshdParser = struct {
     pub fn parseAddr(line: []const u8) !Addr {
@@ -366,9 +352,9 @@ fn parseLine(mean: Meaningful) !?Line {
     return switch (mean.class) {
         .nginx => {
             return .{
-                .src_addr = NginxParser.parseAddr(mean.line) catch return null,
-                .timestamp = try NginxParser.parseTime(mean.line),
-                .extra = try NginxParser.parseExtra(mean.line),
+                .src_addr = parser.nginx.parseAddr(mean.line) catch return null,
+                .timestamp = try parser.nginx.parseTime(mean.line),
+                .extra = try parser.nginx.parseExtra(mean.line),
             };
         },
 
@@ -429,7 +415,7 @@ const Allocator = std.mem.Allocator;
 const indexOf = std.mem.indexOf;
 const indexOfAny = std.mem.indexOfAny;
 const indexOfScalar = std.mem.indexOfScalar;
-//const indexOfScalarPos = std.mem.indexOfScalarPos;
+const indexOfScalarPos = std.mem.indexOfScalarPos;
 const parseInt = std.fmt.parseInt;
 const startsWith = std.mem.startsWith;
 const eql = std.mem.eql;
