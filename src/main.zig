@@ -288,7 +288,7 @@ pub const Addr = union(enum) {
 
     fn parseV6(str: []const u8) !Addr {
         _ = str;
-        return .{ .ipv6 = undefined };
+        return .{ .ipv6 = unreachable };
     }
 
     pub fn parse(str: []const u8) !Addr {
