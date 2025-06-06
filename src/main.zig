@@ -13,6 +13,8 @@ fn usage(arg0: []const u8) noreturn {
         \\    --watch     [filename]    Process and then tail for new data
         \\    --watch-all [filename]    Process and then tail all following logs
         \\
+        \\    --quiet                   Don't print rules
+        \\
     , .{arg0});
     std.posix.exit(1);
 }
@@ -96,6 +98,7 @@ pub fn main() !void {
 
     var default_watch: bool = false;
     var exec_rules: bool = false;
+    var quiet: bool = false;
 
     while (args.next()) |arg| {
         if (log_files.items.len >= file_buf.len) {
@@ -108,6 +111,8 @@ pub fn main() !void {
                 return;
             } else if (eql(u8, arg, "--exec")) {
                 exec_rules = true;
+            } else if (eql(u8, arg, "--quiet")) {
+                quiet = true;
             } else if (eql(u8, arg, "--watch")) {
                 const filename = args.next() orelse {
                     std.debug.print("error: --watch requires a filename\n", .{});
@@ -136,7 +141,7 @@ pub fn main() !void {
     if (exec_rules) {
         try execBanList(a);
     } else {
-        try printBanList(a, stdout.any());
+        if (!quiet) try printBanList(a, stdout.any());
         try bw.flush();
     }
 
@@ -162,7 +167,7 @@ pub fn main() !void {
             if (exec_rules) {
                 try execBanList(a);
             } else {
-                try printBanList(a, stdout.any());
+                if (!quiet) try printBanList(a, stdout.any());
                 try bw.flush();
             }
             banned = baddies.count();
