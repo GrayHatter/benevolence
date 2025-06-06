@@ -42,14 +42,11 @@ const LogFile = struct {
     pub fn raze(lf: *LogFile) void {
         lf.watch = false;
         lf.file.close();
-        if (lf.fbs.buffer.len > 0) {
-            return std.posix.munmap(@alignCast(lf.fbs.buffer));
-        }
+        std.posix.munmap(@alignCast(lf.fbs.buffer));
     }
 
     fn mmap(f: std.fs.File) ![]const u8 {
         const PROT = std.posix.PROT;
-
         const length = try f.getEndPos();
         const offset = 0;
         return std.posix.mmap(null, length, PROT.READ, .{ .TYPE = .SHARED }, f.handle, offset);
