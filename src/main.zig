@@ -76,7 +76,8 @@ fn usage(arg0: []const u8) noreturn {
     //
     std.debug.print(
         \\error: you're holding it wrong
-        \\  usage: {s} [filename]
+        \\
+        \\Usage: {s} [filename]
         \\
         \\Options:
         \\
@@ -194,6 +195,8 @@ pub fn main() !void {
             log_files.appendAssumeCapacity(try .init(arg, default_watch));
         }
     }
+
+    if (log_files.items.len == 0) usage(arg0);
 
     for (log_files.items) |*file| {
         try readFile(a, file);
