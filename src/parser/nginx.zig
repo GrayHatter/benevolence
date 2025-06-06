@@ -1,3 +1,17 @@
+pub fn filter(line: []const u8) bool {
+    var dots: usize = 0;
+    var idx: usize = 0;
+    while (dots <= 3 and idx <= line.len) : (idx += 1) {
+        switch (line[idx]) {
+            '0'...'9' => continue,
+            '.' => dots += 1,
+            else => break,
+        }
+    }
+
+    return line[idx] == ' ' and dots == 3;
+}
+
 pub fn parseAddr(line: []const u8) !Addr {
     return Addr.parse(line[0 .. indexOfScalar(u8, line, ' ') orelse return error.InvalidLogLine]);
 }

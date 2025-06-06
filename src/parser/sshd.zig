@@ -1,3 +1,7 @@
+pub fn filter(line: []const u8) bool {
+    return indexOf(u8, line, "sshd-session[") != null;
+}
+
 pub fn parseAddr(line: []const u8) !Addr {
     if (indexOf(u8, line, "Connection from ")) |i| {
         return try Addr.parse(line[i + 16 ..]);

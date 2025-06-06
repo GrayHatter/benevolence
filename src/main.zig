@@ -335,8 +335,13 @@ const BanData = struct {
 var baddies: std.StringHashMapUnmanaged(BanData) = .{};
 var goodies: std.StringHashMapUnmanaged(BanData) = .{};
 
+const Group = struct {
+    nginx: []const Detection,
+    postfix: []const Detection,
+    sshd: []const Detection,
+};
+
 const Detection = struct {
-    class: Class,
     hit: []const u8,
 };
 
@@ -352,35 +357,49 @@ const Meaningful = struct {
 };
 
 fn meaningful(line: []const u8) ?Meaningful {
-    const interesting: []const Detection = &[_]Detection{
-        .{
-            .class = .postfix,
-            .hit = "SASL LOGIN authentication failed",
+    const rules: Group = .{
+        .nginx = &[_]Detection{
+            .{ .hit = "/.env HTTP/" },
         },
-        .{
-            .class = .nginx,
-            .hit = "/.env HTTP/",
+        .postfix = &[_]Detection{
+            .{ .hit = "SASL LOGIN authentication failed" },
         },
-        .{
-            .class = .sshd,
-            .hit = ": Connection closed by invalid user",
-        },
-        .{
-            .class = .sshd,
-            .hit = ": Invalid user",
+        .sshd = &[_]Detection{
+            .{ .hit = ": Connection closed by invalid user" },
+            .{ .hit = ": Invalid user" },
         },
     };
 
-    inline for (interesting) |dect| {
-        if (std.mem.indexOf(u8, line, dect.hit)) |_| {
-            return .{
-                .class = dect.class,
-                .line = line,
-            };
+    if (parser.nginx.filter(line)) {
+        inline for (rules.nginx) |rule| {
+            if (indexOf(u8, line, rule.hit)) |_| {
+                return .{
+                    .class = .nginx,
+                    .line = line,
+                };
+            }
         }
-    } else {
-        return null;
+    } else if (parser.postfix.filter(line)) {
+        inline for (rules.postfix) |rule| {
+            if (indexOf(u8, line, rule.hit)) |_| {
+                return .{
+                    .class = .postfix,
+                    .line = line,
+                };
+            }
+        }
+    } else if (parser.sshd.filter(line)) {
+        inline for (rules.sshd) |rule| {
+            if (indexOf(u8, line, rule.hit)) |_| {
+                return .{
+                    .class = .sshd,
+                    .line = line,
+                };
+            }
+        }
     }
+
+    return null;
 }
 
 pub const Addr = union(enum) {

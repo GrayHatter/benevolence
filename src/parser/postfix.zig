@@ -1,3 +1,7 @@
+pub fn filter(line: []const u8) bool {
+    return indexOf(u8, line, " mail.warn postfix/") != null;
+}
+
 pub fn parseAddr(line: []const u8) !Addr {
     if (indexOf(u8, line, "]: SASL PLAIN") orelse indexOf(u8, line, "]: SASL LOGIN")) |j| {
         if (lastIndexOf(u8, line[0..j], "[")) |i| {
