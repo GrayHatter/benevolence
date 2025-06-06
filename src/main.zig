@@ -47,7 +47,15 @@ const LogFile = struct {
         }
     }
 
-    pub fn remap(lf: *LogFile) !void {
+    fn mmap(f: std.fs.File) ![]const u8 {
+        const PROT = std.posix.PROT;
+
+        const length = try f.getEndPos();
+        const offset = 0;
+        return std.posix.mmap(null, length, PROT.READ, .{ .TYPE = .SHARED }, f.handle, offset);
+    }
+
+    fn remap(lf: *LogFile) !void {
         const meta = try lf.file.metadata();
         if (meta.size() < lf.meta.size()) return error.Truncated;
         if (meta.size() == lf.meta.size()) {
@@ -296,14 +304,6 @@ fn readFile(a: Allocator, logfile: *LogFile) !void {
 
     const lap = timer.lap();
     std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
-}
-
-fn mmap(f: std.fs.File) ![]const u8 {
-    const PROT = std.posix.PROT;
-
-    const length = try f.getEndPos();
-    const offset = 0;
-    return std.posix.mmap(null, length, PROT.READ, .{ .TYPE = .SHARED }, f.handle, offset);
 }
 
 const BanData = struct {
