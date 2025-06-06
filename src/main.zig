@@ -81,6 +81,8 @@ fn usage(arg0: []const u8) noreturn {
         \\Options:
         \\
         \\    --example                 Print an example nft config then exit
+        \\    --exec                    Install banned elements into nft
+        \\
         \\    --watch     [filename]    Process and then tail for new data
         \\    --watch-all [filename]    Process and then tail all following logs
         \\
@@ -161,6 +163,7 @@ pub fn main() !void {
     var log_files: std.ArrayListUnmanaged(LogFile) = .initBuffer(&file_buf);
 
     var default_watch: bool = false;
+    var exec_rules: bool = false;
 
     while (args.next()) |arg| {
         if (log_files.items.len >= file_buf.len) {
@@ -171,6 +174,8 @@ pub fn main() !void {
             if (eql(u8, arg, "--example")) {
                 try stdout.writeAll(nft_example_config);
                 return;
+            } else if (eql(u8, arg, "--exec")) {
+                exec_rules = true;
             } else if (eql(u8, arg, "--watch")) {
                 const filename = args.next() orelse {
                     std.debug.print("error: --watch requires a filename\n", .{});
@@ -189,12 +194,17 @@ pub fn main() !void {
             log_files.appendAssumeCapacity(try .init(arg, default_watch));
         }
     }
+
     for (log_files.items) |*file| {
         try readFile(a, file);
     }
 
-    try printBanList(a, stdout.any());
-    try bw.flush();
+    if (exec_rules) {
+        try execBanList(a);
+    } else {
+        try printBanList(a, stdout.any());
+        try bw.flush();
+    }
 
     var count: usize = 0;
     for (log_files.items) |*lf| {
@@ -215,11 +225,86 @@ pub fn main() !void {
             };
         }
         if (baddies.count() > banned) {
-            try printBanList(a, stdout.any());
-            try bw.flush();
+            if (exec_rules) {
+                try execBanList(a);
+            } else {
+                try printBanList(a, stdout.any());
+                try bw.flush();
+            }
             banned = baddies.count();
         }
         std.time.sleep(1 * 1000 * 1000 * 1000);
+    }
+}
+
+fn execBanList(a: Allocator) !void {
+    var banlist_http: std.ArrayListUnmanaged(u8) = .{};
+    var banlist_mail: std.ArrayListUnmanaged(u8) = .{};
+    var banlist_sshd: std.ArrayListUnmanaged(u8) = .{};
+
+    defer {
+        banlist_http.deinit(a);
+        banlist_mail.deinit(a);
+        banlist_sshd.deinit(a);
+    }
+
+    var vals = baddies.iterator();
+    while (vals.next()) |kv| {
+        if (kv.value_ptr.count < 2) continue;
+        var w = switch (kv.value_ptr.class) {
+            .nginx => &banlist_http.writer(a),
+            .postfix => &banlist_mail.writer(a),
+            .sshd => &banlist_sshd.writer(a),
+        };
+        try w.print(", {s}", .{kv.key_ptr.*});
+    }
+
+    if (banlist_http.items.len > 2) {
+        banlist_http.items[0] = '{';
+        try banlist_http.appendSlice(a, " }");
+        var child: std.process.Child = .init(&[_][]const u8{
+            "nft",
+            "add",
+            "element",
+            "inet",
+            "filter",
+            "abuse-http",
+            banlist_http.items,
+        }, a);
+        child.expand_arg0 = .expand;
+        _ = try child.spawnAndWait();
+    }
+
+    if (banlist_mail.items.len > 2) {
+        banlist_mail.items[0] = '{';
+        try banlist_mail.appendSlice(a, " }");
+        var child: std.process.Child = .init(&[_][]const u8{
+            "nft",
+            "add",
+            "element",
+            "inet",
+            "filter",
+            "abuse-mail",
+            banlist_mail.items,
+        }, a);
+        child.expand_arg0 = .expand;
+        _ = try child.spawnAndWait();
+    }
+
+    if (banlist_sshd.items.len > 2) {
+        banlist_sshd.items[0] = '{';
+        try banlist_sshd.appendSlice(a, " }");
+        var child: std.process.Child = .init(&[_][]const u8{
+            "nft",
+            "add",
+            "element",
+            "inet",
+            "filter",
+            "abuse-sshd",
+            banlist_sshd.items,
+        }, a);
+        child.expand_arg0 = .expand;
+        _ = try child.spawnAndWait();
     }
 }
 
