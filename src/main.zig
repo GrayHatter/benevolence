@@ -187,13 +187,18 @@ fn execBanList(a: Allocator) !void {
 
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
-        if (kv.value_ptr.count < 2) continue;
-        var w = switch (kv.value_ptr.class) {
-            .nginx => &banlist_http.writer(a),
-            .postfix => &banlist_mail.writer(a),
-            .sshd => &banlist_sshd.writer(a),
-        };
-        try w.print(", {s}", .{kv.key_ptr.*});
+        if (kv.value_ptr.count.http >= 2) {
+            var w = banlist_http.writer(a);
+            try w.print(", {s}", .{kv.key_ptr.*});
+        }
+        if (kv.value_ptr.count.mail >= 2) {
+            var w = banlist_mail.writer(a);
+            try w.print(", {s}", .{kv.key_ptr.*});
+        }
+        if (kv.value_ptr.count.sshd >= 2) {
+            var w = banlist_sshd.writer(a);
+            try w.print(", {s}", .{kv.key_ptr.*});
+        }
     }
 
     if (banlist_http.items.len > 2) {
@@ -258,13 +263,18 @@ fn printBanList(a: Allocator, stdout: std.io.AnyWriter) !void {
 
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
-        if (kv.value_ptr.count < 2) continue;
-        var w = switch (kv.value_ptr.class) {
-            .nginx => &banlist_http.writer(a),
-            .postfix => &banlist_mail.writer(a),
-            .sshd => &banlist_sshd.writer(a),
-        };
-        try w.print(", {s}", .{kv.key_ptr.*});
+        if (kv.value_ptr.count.http >= 2) {
+            var w = banlist_http.writer(a);
+            try w.print(", {s}", .{kv.key_ptr.*});
+        }
+        if (kv.value_ptr.count.mail >= 2) {
+            var w = banlist_mail.writer(a);
+            try w.print(", {s}", .{kv.key_ptr.*});
+        }
+        if (kv.value_ptr.count.sshd >= 2) {
+            var w = banlist_sshd.writer(a);
+            try w.print(", {s}", .{kv.key_ptr.*});
+        }
     }
 
     if (banlist_http.items.len > 2) {
@@ -293,10 +303,12 @@ fn readFile(a: Allocator, logfile: *LogFile) !void {
             const gop = try baddies.getOrPut(a, paddr);
             if (!gop.found_existing) {
                 gop.key_ptr.* = try a.dupe(u8, paddr);
-                gop.value_ptr.count = 1;
-                gop.value_ptr.class = m.class;
-            } else {
-                gop.value_ptr.count += 1;
+                gop.value_ptr.count = .zero;
+            }
+            switch (m.class) {
+                .nginx => gop.value_ptr.count.http += 1,
+                .postfix => gop.value_ptr.count.mail += 1,
+                .sshd => gop.value_ptr.count.sshd += 1,
             }
             //std.debug.print("found: {s}\n", .{m});
         }
@@ -307,8 +319,15 @@ fn readFile(a: Allocator, logfile: *LogFile) !void {
 }
 
 const BanData = struct {
-    class: Class,
-    count: usize,
+    count: Count = .zero,
+
+    pub const Count = struct {
+        http: usize,
+        mail: usize,
+        sshd: usize,
+
+        pub const zero: Count = .{ .http = 0, .mail = 0, .sshd = 0 };
+    };
 };
 
 var baddies: std.StringHashMapUnmanaged(BanData) = .{};
