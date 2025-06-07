@@ -10,10 +10,11 @@ fn usage(arg0: []const u8) noreturn {
         \\    --example                 Print an example nft config then exit
         \\    --exec                    Install banned elements into nft
         \\
-        \\    --watch     [filename]    Process and then tail for new data
-        \\    --watch-all [filename]    Process and then tail all following logs
+        \\    --watch     <filename>    Process and then tail for new data
+        \\    --watch-all <filename>    Process and then tail all following logs
         \\
         \\    --quiet                   Don't print rules
+        \\    --ban-timeout <timeout>   Default time to ban a host [504h]
         \\
     , .{arg0});
     std.posix.exit(1);
@@ -99,6 +100,8 @@ pub fn main() !void {
     var default_watch: bool = false;
     var exec_rules: bool = false;
     var quiet: bool = false;
+    var to_buf: [32]u8 = @splat(' ');
+    var timeout: []const u8 = "";
 
     while (args.next()) |arg| {
         if (log_files.items.len >= file_buf.len) {
@@ -113,6 +116,12 @@ pub fn main() !void {
                 exec_rules = true;
             } else if (eql(u8, arg, "--quiet")) {
                 quiet = true;
+            } else if (eql(u8, arg, "--ban-timeout")) {
+                timeout = bufPrint(
+                    &to_buf,
+                    " timeout {s}",
+                    .{args.next() orelse usage(arg0)},
+                ) catch usage(arg0);
             } else if (eql(u8, arg, "--watch")) {
                 const filename = args.next() orelse {
                     std.debug.print("error: --watch requires a filename\n", .{});
@@ -139,9 +148,9 @@ pub fn main() !void {
     }
 
     if (exec_rules) {
-        try execBanList(a);
+        try execBanList(a, timeout);
     } else {
-        if (!quiet) try printBanList(a, stdout.any());
+        if (!quiet) try printBanList(a, stdout.any(), timeout);
         try bw.flush();
     }
 
@@ -165,9 +174,9 @@ pub fn main() !void {
         }
         if (baddies.count() > banned) {
             if (exec_rules) {
-                try execBanList(a);
+                try execBanList(a, timeout);
             } else {
-                if (!quiet) try printBanList(a, stdout.any());
+                if (!quiet) try printBanList(a, stdout.any(), timeout);
                 try bw.flush();
             }
             banned = baddies.count();
@@ -176,12 +185,12 @@ pub fn main() !void {
     }
 }
 
-fn execBanList(a: Allocator) !void {
+fn genLists(a: Allocator, timeout: []const u8) ![3]std.ArrayListUnmanaged(u8) {
     var banlist_http: std.ArrayListUnmanaged(u8) = .{};
     var banlist_mail: std.ArrayListUnmanaged(u8) = .{};
     var banlist_sshd: std.ArrayListUnmanaged(u8) = .{};
 
-    defer {
+    errdefer {
         banlist_http.deinit(a);
         banlist_mail.deinit(a);
         banlist_sshd.deinit(a);
@@ -191,104 +200,92 @@ fn execBanList(a: Allocator) !void {
     while (vals.next()) |kv| {
         if (kv.value_ptr.count.http >= 2) {
             var w = banlist_http.writer(a);
-            try w.print(", {s}", .{kv.key_ptr.*});
+            try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
         }
         if (kv.value_ptr.count.mail >= 2) {
             var w = banlist_mail.writer(a);
-            try w.print(", {s}", .{kv.key_ptr.*});
+            try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
         }
         if (kv.value_ptr.count.sshd >= 2) {
             var w = banlist_sshd.writer(a);
-            try w.print(", {s}", .{kv.key_ptr.*});
+            try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
         }
     }
+    return .{
+        banlist_http,
+        banlist_mail,
+        banlist_sshd,
+    };
+}
 
-    if (banlist_http.items.len > 2) {
-        banlist_http.items[0] = '{';
-        try banlist_http.appendSlice(a, " }");
-        var child: std.process.Child = .init(&[_][]const u8{
-            "nft",
-            "add",
-            "element",
-            "inet",
-            "filter",
+fn execBanList(a: Allocator, timeout: []const u8) !void {
+    const cmd_base = [_][]const u8{
+        "nft",
+        "add",
+        "element",
+        "inet",
+        "filter",
+    };
+
+    var http, var mail, var sshd = try genLists(a, timeout);
+    defer {
+        http.deinit(a);
+        mail.deinit(a);
+        sshd.deinit(a);
+    }
+
+    if (http.items.len > 2) {
+        http.items[0] = '{';
+        try http.appendSlice(a, " }");
+        var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
             "abuse-http",
-            banlist_http.items,
+            http.items,
         }, a);
         child.expand_arg0 = .expand;
         _ = try child.spawnAndWait();
     }
 
-    if (banlist_mail.items.len > 2) {
-        banlist_mail.items[0] = '{';
-        try banlist_mail.appendSlice(a, " }");
-        var child: std.process.Child = .init(&[_][]const u8{
-            "nft",
-            "add",
-            "element",
-            "inet",
-            "filter",
+    if (mail.items.len > 2) {
+        mail.items[0] = '{';
+        try mail.appendSlice(a, " }");
+        var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
             "abuse-mail",
-            banlist_mail.items,
+            mail.items,
         }, a);
         child.expand_arg0 = .expand;
         _ = try child.spawnAndWait();
     }
 
-    if (banlist_sshd.items.len > 2) {
-        banlist_sshd.items[0] = '{';
-        try banlist_sshd.appendSlice(a, " }");
-        var child: std.process.Child = .init(&[_][]const u8{
-            "nft",
-            "add",
-            "element",
-            "inet",
-            "filter",
+    if (sshd.items.len > 2) {
+        sshd.items[0] = '{';
+        try sshd.appendSlice(a, " }");
+        var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
             "abuse-sshd",
-            banlist_sshd.items,
+            sshd.items,
         }, a);
         child.expand_arg0 = .expand;
         _ = try child.spawnAndWait();
     }
 }
 
-fn printBanList(a: Allocator, stdout: std.io.AnyWriter) !void {
-    var banlist_http: std.ArrayListUnmanaged(u8) = .{};
-    var banlist_mail: std.ArrayListUnmanaged(u8) = .{};
-    var banlist_sshd: std.ArrayListUnmanaged(u8) = .{};
-
+fn printBanList(a: Allocator, stdout: std.io.AnyWriter, timeout: []const u8) !void {
+    var http, var mail, var sshd = try genLists(a, timeout);
     defer {
-        banlist_http.deinit(a);
-        banlist_mail.deinit(a);
-        banlist_sshd.deinit(a);
+        http.deinit(a);
+        mail.deinit(a);
+        sshd.deinit(a);
     }
 
-    var vals = baddies.iterator();
-    while (vals.next()) |kv| {
-        if (kv.value_ptr.count.http >= 2) {
-            var w = banlist_http.writer(a);
-            try w.print(", {s}", .{kv.key_ptr.*});
-        }
-        if (kv.value_ptr.count.mail >= 2) {
-            var w = banlist_mail.writer(a);
-            try w.print(", {s}", .{kv.key_ptr.*});
-        }
-        if (kv.value_ptr.count.sshd >= 2) {
-            var w = banlist_sshd.writer(a);
-            try w.print(", {s}", .{kv.key_ptr.*});
-        }
+    if (http.items.len > 2) {
+        try stdout.print("nft add element inet filter abuse-http '{{ {s} }}'\n", .{http.items[2..]});
     }
 
-    if (banlist_http.items.len > 2) {
-        try stdout.print("nft add element inet filter abuse-http '{{ {s} }}'\n", .{banlist_http.items[2..]});
+    if (mail.items.len > 2) {
+        try stdout.print("nft add element inet filter abuse-mail '{{ {s} }}'\n", .{mail.items[2..]});
     }
 
-    if (banlist_mail.items.len > 2) {
-        try stdout.print("nft add element inet filter abuse-mail '{{ {s} }}'\n", .{banlist_mail.items[2..]});
-    }
-
-    if (banlist_sshd.items.len > 2) {
-        try stdout.print("nft add element inet filter abuse-sshd '{{ {s} }}'\n", .{banlist_sshd.items[2..]});
+    if (sshd.items.len > 2) {
+        try stdout.print("nft add element inet filter abuse-sshd '{{ {s} }}'\n", .{sshd.items[2..]});
     }
 }
 
@@ -537,3 +534,4 @@ const indexOfScalarPos = std.mem.indexOfScalarPos;
 const parseInt = std.fmt.parseInt;
 const startsWith = std.mem.startsWith;
 const eql = std.mem.eql;
+const bufPrint = std.fmt.bufPrint;
