@@ -211,6 +211,14 @@ fn genLists(a: Allocator, timeout: []const u8) ![3]std.ArrayListUnmanaged(u8) {
             try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
         }
     }
+
+    try banlist_http.appendSlice(a, " }");
+    try banlist_mail.appendSlice(a, " }");
+    try banlist_sshd.appendSlice(a, " }");
+    banlist_http.items[0] = '{';
+    banlist_mail.items[0] = '{';
+    banlist_sshd.items[0] = '{';
+
     return .{
         banlist_http,
         banlist_mail,
@@ -235,8 +243,6 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
     }
 
     if (http.items.len > 2) {
-        http.items[0] = '{';
-        try http.appendSlice(a, " }");
         var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
             "abuse-http",
             http.items,
@@ -246,8 +252,6 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
     }
 
     if (mail.items.len > 2) {
-        mail.items[0] = '{';
-        try mail.appendSlice(a, " }");
         var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
             "abuse-mail",
             mail.items,
@@ -257,8 +261,6 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
     }
 
     if (sshd.items.len > 2) {
-        sshd.items[0] = '{';
-        try sshd.appendSlice(a, " }");
         var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
             "abuse-sshd",
             sshd.items,
@@ -277,15 +279,15 @@ fn printBanList(a: Allocator, stdout: std.io.AnyWriter, timeout: []const u8) !vo
     }
 
     if (http.items.len > 2) {
-        try stdout.print("nft add element inet filter abuse-http '{{ {s} }}'\n", .{http.items[2..]});
+        try stdout.print("nft add element inet filter abuse-http '{s}'\n", .{http.items[0..]});
     }
 
     if (mail.items.len > 2) {
-        try stdout.print("nft add element inet filter abuse-mail '{{ {s} }}'\n", .{mail.items[2..]});
+        try stdout.print("nft add element inet filter abuse-mail '{s}'\n", .{mail.items[0..]});
     }
 
     if (sshd.items.len > 2) {
-        try stdout.print("nft add element inet filter abuse-sshd '{{ {s} }}'\n", .{sshd.items[2..]});
+        try stdout.print("nft add element inet filter abuse-sshd '{s}'\n", .{sshd.items[0..]});
     }
 }
 
