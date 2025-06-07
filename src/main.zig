@@ -363,6 +363,7 @@ fn meaningful(line: []const u8) ?Meaningful {
         },
         .postfix = &[_]Detection{
             .{ .hit = "SASL LOGIN authentication failed" },
+            .{ .hit = "SASL PLAIN authentication failed" },
         },
         .sshd = &[_]Detection{
             .{ .hit = ": Connection closed by invalid user" },
