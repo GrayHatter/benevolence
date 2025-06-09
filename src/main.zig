@@ -228,11 +228,7 @@ fn genLists(a: Allocator, timeout: []const u8) ![3]std.ArrayListUnmanaged(u8) {
 
 fn execBanList(a: Allocator, timeout: []const u8) !void {
     const cmd_base = [_][]const u8{
-        "nft",
-        "add",
-        "element",
-        "inet",
-        "filter",
+        "nft", "add", "element", "inet", "filter",
     };
 
     var http, var mail, var sshd = try genLists(a, timeout);
