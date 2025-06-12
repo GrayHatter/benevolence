@@ -355,6 +355,7 @@ fn meaningful(line: []const u8) ?Meaningful {
     const rules: Group = .{
         .nginx = &[_]Detection{
             .{ .hit = "/.env HTTP/" },
+            .{ .hit = "PHP/eval-stdin.php HTTP/1.1\" 404" },
         },
         .postfix = &[_]Detection{
             .{ .hit = "SASL LOGIN authentication failed" },
