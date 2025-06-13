@@ -303,6 +303,7 @@ fn readFile(a: Allocator, logfile: *LogFile) !void {
                 gop.value_ptr.count = .zero;
             }
             switch (m.class) {
+                .dovecot => gop.value_ptr.count.mail += 9,
                 .nginx => gop.value_ptr.count.http += 1,
                 .postfix => gop.value_ptr.count.mail += 1,
                 .sshd => gop.value_ptr.count.sshd += 1,
@@ -331,6 +332,7 @@ var baddies: std.StringHashMapUnmanaged(BanData) = .{};
 var goodies: std.StringHashMapUnmanaged(BanData) = .{};
 
 const Group = struct {
+    dovecot: []const Detection,
     nginx: []const Detection,
     postfix: []const Detection,
     sshd: []const Detection,
@@ -341,6 +343,7 @@ const Detection = struct {
 };
 
 const Class = enum {
+    dovecot,
     nginx,
     postfix,
     sshd,
@@ -353,6 +356,10 @@ const Meaningful = struct {
 
 fn meaningful(line: []const u8) ?Meaningful {
     const rules: Group = .{
+        .dovecot = &[_]Detection{
+            .{ .hit = "(auth_failed): user" },
+            .{ .hit = "Connection closed (auth failed," },
+        },
         .nginx = &[_]Detection{
             .{ .hit = "/.env HTTP/" },
             .{ .hit = "PHP/eval-stdin.php HTTP/1.1\" 404" },
@@ -367,7 +374,16 @@ fn meaningful(line: []const u8) ?Meaningful {
         },
     };
 
-    if (parser.nginx.filter(line)) {
+    if (parser.dovecot.filter(line)) {
+        inline for (rules.dovecot) |rule| {
+            if (indexOf(u8, line, rule.hit)) |_| {
+                return .{
+                    .class = .dovecot,
+                    .line = line,
+                };
+            }
+        }
+    } else if (parser.nginx.filter(line)) {
         inline for (rules.nginx) |rule| {
             if (indexOf(u8, line, rule.hit)) |_| {
                 return .{
@@ -482,6 +498,7 @@ pub const Line = struct {
 
 fn parseLine(mean: Meaningful) !?Line {
     return switch (mean.class) {
+        .dovecot => parser.dovecot.parseLine(mean.line),
         .nginx => parser.nginx.parseLine(mean.line),
         .postfix => parser.postfix.parseLine(mean.line),
         .sshd => parser.sshd.parseLine(mean.line),
@@ -508,12 +525,19 @@ test parseLine {
             \\May 29 15:21:53 gr auth.info sshd-session[25292]: banner exchange: Connection from 20.64.105.146 port 47144: invalid format
             ,
         },
+        .{
+            .class = .dovecot,
+            .line =
+            \\Jun 12 19:24:38 imap-login: Info: Login aborted: Connection closed (auth failed, 3 attempts in 15 secs) (auth_failed): user=<eft>, method=PLAIN, rip=80.51.181.144, lip=127.4.20.69, TLS, session=<25Nw4GQ3Ms9QM7WQ>
+            ,
+        },
     };
 
     const log_hits = &[_]Line{
         .{ .src_addr = .{ .ipv4 = [4]u8{ 117, 217, 120, 52 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 149, 255, 62, 135 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 64, 105, 146 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 80, 51, 181, 144 } }, .timestamp = 0, .extra = "" },
     };
 
     for (log_lines, log_hits) |line, hit| {
