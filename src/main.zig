@@ -7,14 +7,15 @@ fn usage(arg0: []const u8) noreturn {
         \\
         \\Options:
         \\
-        \\    --example                 Print an example nft config then exit
-        \\    --exec                    Install banned elements into nft
+        \\    --example                         Print an example nft config then exit
+        \\    --exec                            Install banned elements into nft
+        \\    --                                Use stdin
         \\
-        \\    --watch     <filename>    Process and then tail for new data
-        \\    --watch-all <filename>    Process and then tail all following logs
+        \\    --watch           <filename>      Process and then tail for new data
+        \\    --watch-all       <filename>      Process and then tail all following logs
         \\
-        \\    --quiet                   Don't print rules
-        \\    --ban-timeout <timeout>   Default time to ban a host [504h]
+        \\    --quiet                           Don't print rules
+        \\    --ban-timeout     <timeout>       Default time to ban a host [504h]
         \\
     , .{arg0});
     std.posix.exit(1);
@@ -22,7 +23,10 @@ fn usage(arg0: []const u8) noreturn {
 
 const LogFile = struct {
     file: std.fs.File,
-    fbs: std.io.FixedBufferStream([]const u8),
+    src: union(enum) {
+        stdin: void,
+        fbs: std.io.FixedBufferStream([]const u8),
+    },
     watch: bool,
     meta: std.fs.File.Metadata,
     line_buffer: [4096]u8 = undefined,
@@ -31,9 +35,11 @@ const LogFile = struct {
         const f = try std.fs.cwd().openFile(filename, .{});
         const lf: LogFile = .{
             .file = f,
-            .fbs = .{
-                .buffer = try mmap(f),
-                .pos = 0,
+            .src = .{
+                .fbs = .{
+                    .buffer = try mmap(f),
+                    .pos = 0,
+                },
             },
             .watch = watch,
             .meta = try f.metadata(),
@@ -42,10 +48,25 @@ const LogFile = struct {
         return lf;
     }
 
+    pub fn initStdin() !LogFile {
+        const in = std.io.getStdIn();
+        return .{
+            .file = in,
+            .src = .{
+                .stdin = {},
+            },
+            .watch = true,
+            .meta = try in.metadata(),
+        };
+    }
+
     pub fn raze(lf: *LogFile) void {
         lf.watch = false;
         lf.file.close();
-        std.posix.munmap(@alignCast(lf.fbs.buffer));
+        switch (lf.src) {
+            .fbs => |fbs| std.posix.munmap(@alignCast(fbs.buffer)),
+            else => {},
+        }
     }
 
     fn mmap(f: std.fs.File) ![]const u8 {
@@ -62,9 +83,9 @@ const LogFile = struct {
             lf.meta = meta;
             return;
         }
-        lf.fbs.buffer = try std.posix.mremap(
-            @alignCast(@constCast(lf.fbs.buffer.ptr)),
-            lf.fbs.buffer.len,
+        lf.src.fbs.buffer = try std.posix.mremap(
+            @alignCast(@constCast(lf.src.fbs.buffer.ptr)),
+            lf.src.fbs.buffer.len,
             meta.size(),
             .{ .MAYMOVE = true },
             null,
@@ -73,10 +94,17 @@ const LogFile = struct {
     }
 
     pub fn line(lf: *LogFile) !?[]const u8 {
-        if (lf.fbs.pos == lf.fbs.buffer.len) try lf.remap();
-
-        var reader = lf.fbs.reader();
-        return try reader.readUntilDelimiterOrEof(&lf.line_buffer, '\n');
+        switch (lf.src) {
+            .fbs => |*fbs| {
+                if (fbs.pos == fbs.buffer.len) try lf.remap();
+                var reader = fbs.reader();
+                return try reader.readUntilDelimiterOrEof(&lf.line_buffer, '\n');
+            },
+            .stdin => {
+                var reader = lf.file.reader();
+                return try reader.readUntilDelimiter(&lf.line_buffer, '\n');
+            },
+        }
     }
 };
 
@@ -109,7 +137,9 @@ pub fn main() !void {
             usage(arg0);
         }
         if (startsWith(u8, arg, "--")) {
-            if (eql(u8, arg, "--example")) {
+            if (eql(u8, arg, "--")) {
+                log_files.appendAssumeCapacity(try .initStdin());
+            } else if (eql(u8, arg, "--example")) {
                 try stdout.writeAll(example_config.nft);
                 return;
             } else if (eql(u8, arg, "--exec")) {
@@ -135,7 +165,9 @@ pub fn main() !void {
                 };
                 log_files.appendAssumeCapacity(try .init(filename, true));
                 default_watch = true;
-            } else usage(arg0);
+            } else {
+                usage(arg0);
+            }
         } else {
             log_files.appendAssumeCapacity(try .init(arg, default_watch));
         }
@@ -144,7 +176,7 @@ pub fn main() !void {
     if (log_files.items.len == 0) usage(arg0);
 
     for (log_files.items) |*file| {
-        try readFile(a, file);
+        if (!file.watch) try readFile(a, file);
     }
 
     if (exec_rules) {
@@ -154,24 +186,25 @@ pub fn main() !void {
         try bw.flush();
     }
 
-    var count: usize = 0;
+    var files_remaining: usize = 0;
     for (log_files.items) |*lf| {
         if (!lf.watch) {
             lf.raze();
-        } else count += 1;
+        } else files_remaining += 1;
     }
 
     var banned: usize = baddies.count();
-    while (count > 0) {
+    while (files_remaining > 0) {
         for (log_files.items) |*lf| {
             if (!lf.watch) continue;
             readFile(a, lf) catch |err| {
                 std.debug.print("err {}\n", .{err});
                 lf.raze();
-                count -|= 1;
+                files_remaining -|= 1;
                 continue;
             };
         }
+
         if (baddies.count() > banned) {
             if (exec_rules) {
                 try execBanList(a, timeout);
@@ -181,7 +214,7 @@ pub fn main() !void {
             }
             banned = baddies.count();
         }
-        std.time.sleep(1 * 1000 * 1000 * 1000);
+        sleep(500);
     }
 }
 
@@ -198,6 +231,7 @@ fn genLists(a: Allocator, timeout: []const u8) ![3]std.ArrayListUnmanaged(u8) {
 
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
+        if (kv.value_ptr.banned) continue;
         if (kv.value_ptr.count.http >= 2) {
             var w = banlist_http.writer(a);
             try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
@@ -210,6 +244,7 @@ fn genLists(a: Allocator, timeout: []const u8) ![3]std.ArrayListUnmanaged(u8) {
             var w = banlist_sshd.writer(a);
             try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
         }
+        kv.value_ptr.banned = true;
     }
 
     try banlist_http.appendSlice(a, " }");
@@ -302,6 +337,7 @@ fn readFile(a: Allocator, logfile: *LogFile) !void {
                 gop.key_ptr.* = try a.dupe(u8, paddr);
                 gop.value_ptr.count = .zero;
             }
+            gop.value_ptr.banned = false;
             switch (m.class) {
                 .dovecot => gop.value_ptr.count.mail += 9,
                 .nginx => gop.value_ptr.count.http += 1,
@@ -318,13 +354,18 @@ fn readFile(a: Allocator, logfile: *LogFile) !void {
 
 const BanData = struct {
     count: Count = .zero,
+    banned: bool = false,
 
     pub const Count = struct {
         http: usize,
         mail: usize,
         sshd: usize,
 
-        pub const zero: Count = .{ .http = 0, .mail = 0, .sshd = 0 };
+        pub const zero: Count = .{
+            .http = 0,
+            .mail = 0,
+            .sshd = 0,
+        };
     };
 };
 
@@ -543,6 +584,10 @@ test parseLine {
     for (log_lines, log_hits) |line, hit| {
         try std.testing.expectEqualDeep(hit, parseLine(line));
     }
+}
+
+fn sleep(ms: u64) void {
+    std.time.sleep(ms * std.time.ns_per_ms);
 }
 
 const example_config = @import("example-config.zig");
