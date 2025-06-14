@@ -15,7 +15,7 @@ fn usage(arg0: []const u8) noreturn {
         \\    --watch-all       <filename>      Process and then tail all following logs
         \\
         \\    --quiet                           Don't print rules
-        \\    --ban-timeout     <timeout>       Default time to ban a host [504h]
+        \\    --ban-time        <timeout>       Default time to ban a host [504h]
         \\
     , .{arg0});
     std.posix.exit(1);
@@ -101,6 +101,12 @@ const LogFile = struct {
                 return try reader.readUntilDelimiterOrEof(&lf.line_buffer, '\n');
             },
             .stdin => {
+                var pollfd: [1]std.os.linux.pollfd = .{.{
+                    .fd = lf.file.handle,
+                    .events = std.posix.POLL.IN,
+                    .revents = 0,
+                }};
+                if (std.os.linux.poll(&pollfd, 1, 0) != 1) return null;
                 var reader = lf.file.reader();
                 return try reader.readUntilDelimiter(&lf.line_buffer, '\n');
             },
@@ -146,7 +152,7 @@ pub fn main() !void {
                 exec_rules = true;
             } else if (eql(u8, arg, "--quiet")) {
                 quiet = true;
-            } else if (eql(u8, arg, "--ban-timeout")) {
+            } else if (eql(u8, arg, "--ban-time")) {
                 timeout = bufPrint(
                     &to_buf,
                     " timeout {s}",
@@ -176,7 +182,12 @@ pub fn main() !void {
     if (log_files.items.len == 0) usage(arg0);
 
     for (log_files.items) |*file| {
-        if (!file.watch) try readFile(a, file);
+        if (!file.watch) {
+            var timer: std.time.Timer = try .start();
+            const line_count = try readFile(a, file);
+            const lap = timer.lap();
+            std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
+        }
     }
 
     if (exec_rules) {
@@ -193,11 +204,11 @@ pub fn main() !void {
         } else files_remaining += 1;
     }
 
-    var banned: usize = baddies.count();
+    var banned: usize = 0;
     while (files_remaining > 0) {
         for (log_files.items) |*lf| {
             if (!lf.watch) continue;
-            readFile(a, lf) catch |err| {
+            _ = readFile(a, lf) catch |err| {
                 std.debug.print("err {}\n", .{err});
                 lf.raze();
                 files_remaining -|= 1;
@@ -322,8 +333,7 @@ fn printBanList(a: Allocator, stdout: std.io.AnyWriter, timeout: []const u8) !vo
     }
 }
 
-fn readFile(a: Allocator, logfile: *LogFile) !void {
-    var timer: std.time.Timer = try .start();
+fn readFile(a: Allocator, logfile: *LogFile) !usize {
     var line_count: usize = 0;
 
     while (try logfile.line()) |line| {
@@ -344,12 +354,9 @@ fn readFile(a: Allocator, logfile: *LogFile) !void {
                 .postfix => gop.value_ptr.count.mail += 1,
                 .sshd => gop.value_ptr.count.sshd += 1,
             }
-            //std.debug.print("found: {s}\n", .{m});
         }
     }
-
-    const lap = timer.lap();
-    std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
+    return line_count;
 }
 
 const BanData = struct {
