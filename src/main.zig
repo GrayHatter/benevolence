@@ -9,8 +9,9 @@ fn usage(arg0: []const u8) noreturn {
         \\
         \\    --example                         Print an example nft config then exit
         \\    --exec                            Install banned elements into nft
-        \\    --                                Use stdin
+        \\    --syslog                          Log ban events to syslog [logger]
         \\
+        \\    --                                Use stdin
         \\    --watch           <filename>      Process and then tail for new data
         \\    --watch-all       <filename>      Process and then tail all following logs
         \\
@@ -115,6 +116,7 @@ const LogFile = struct {
 };
 
 var file_buf: [64]LogFile = undefined;
+var syslog: bool = false;
 
 pub fn main() !void {
     const stdout_file = std.io.getStdOut().writer();
@@ -152,6 +154,8 @@ pub fn main() !void {
                 exec_rules = true;
             } else if (eql(u8, arg, "--quiet")) {
                 quiet = true;
+            } else if (eql(u8, arg, "--syslog")) {
+                syslog = true;
             } else if (eql(u8, arg, "--ban-time")) {
                 timeout = bufPrint(
                     &to_buf,
@@ -272,6 +276,40 @@ fn genLists(a: Allocator, timeout: []const u8) ![3]std.ArrayListUnmanaged(u8) {
     };
 }
 
+const SyslogEvent = union(enum) {
+    banned: Banned,
+
+    pub const Banned = struct {
+        count: usize,
+    };
+};
+
+fn syslogEvent(evt: SyslogEvent) !void {
+    if (!syslog) return;
+
+    switch (evt) {
+        .banned => |ban| {
+            var b: [0xff]u8 = undefined;
+            const msg = try std.fmt.bufPrint(&b, "banned {}", .{ban.count});
+
+            var addr: std.posix.sockaddr.un = .{
+                .family = std.posix.AF.UNIX,
+                .path = @splat(0),
+            };
+            @memcpy(addr.path[0..8], "/dev/log");
+            const s = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.DGRAM, 0);
+            try std.posix.connect(
+                s,
+                @ptrCast(&addr),
+                @as(std.posix.socklen_t, @intCast(@sizeOf(@TypeOf(addr)))),
+            );
+            defer std.posix.close(s);
+
+            _ = try std.posix.write(s, msg);
+        },
+    }
+}
+
 fn execBanList(a: Allocator, timeout: []const u8) !void {
     const cmd_base = [_][]const u8{
         "nft", "add", "element", "inet", "filter",
@@ -291,6 +329,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         _ = try child.spawnAndWait();
+        try syslogEvent(.{ .banned = .{ .count = std.mem.count(u8, http.items, ", ") + 1 } });
     }
 
     if (mail.items.len > 2) {
@@ -300,6 +339,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         _ = try child.spawnAndWait();
+        try syslogEvent(.{ .banned = .{ .count = std.mem.count(u8, mail.items, ", ") + 1 } });
     }
 
     if (sshd.items.len > 2) {
@@ -309,6 +349,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         _ = try child.spawnAndWait();
+        try syslogEvent(.{ .banned = .{ .count = std.mem.count(u8, sshd.items, ", ") + 1 } });
     }
 }
 
