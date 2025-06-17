@@ -10,12 +10,13 @@ fn usage(arg0: []const u8) noreturn {
         \\    --example                         Print an example nft config then exit
         \\    --exec                            Install banned elements into nft
         \\    --syslog                          Log ban events to syslog [logger]
+        \\    --quiet                           Don't print rules
+        \\    --dry-run                         Don't execute rules
         \\
         \\    --                                Use stdin
         \\    --watch           <filename>      Process and then tail for new data
         \\    --watch-all       <filename>      Process and then tail all following logs
         \\
-        \\    --quiet                           Don't print rules
         \\    --ban-time        <timeout>       Default time to ban a host [504h]
         \\
     , .{arg0});
@@ -117,6 +118,8 @@ const LogFile = struct {
 
 var file_buf: [64]LogFile = undefined;
 var syslog: bool = false;
+var dryrun: bool = false;
+var exec_rules: bool = false;
 
 pub fn main() !void {
     const stdout_file = std.io.getStdOut().writer();
@@ -134,7 +137,6 @@ pub fn main() !void {
     var log_files: std.ArrayListUnmanaged(LogFile) = .initBuffer(&file_buf);
 
     var default_watch: bool = false;
-    var exec_rules: bool = false;
     var quiet: bool = false;
     var to_buf: [32]u8 = @splat(' ');
     var timeout: []const u8 = "";
@@ -152,6 +154,8 @@ pub fn main() !void {
                 return;
             } else if (eql(u8, arg, "--exec")) {
                 exec_rules = true;
+            } else if (eql(u8, arg, "--dry-run")) {
+                dryrun = true;
             } else if (eql(u8, arg, "--quiet")) {
                 quiet = true;
             } else if (eql(u8, arg, "--syslog")) {
@@ -289,8 +293,11 @@ fn syslogEvent(evt: SyslogEvent) !void {
 
     switch (evt) {
         .banned => |ban| {
-            var b: [0xff]u8 = undefined;
-            const msg = try std.fmt.bufPrint(&b, "banned {}", .{ban.count});
+            var b: [0x2ff]u8 = undefined;
+            const pri: u8 = 4 * 8 + 4;
+            const tag: []const u8 = "benevolence";
+            const pid = std.os.linux.getpid();
+            const msg = try std.fmt.bufPrint(&b, "<{}> {s}[{}]: banned {}", .{ pri, tag, pid, ban.count });
 
             var addr: std.posix.sockaddr.un = .{
                 .family = std.posix.AF.UNIX,
@@ -328,7 +335,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
             http.items,
         }, a);
         child.expand_arg0 = .expand;
-        _ = try child.spawnAndWait();
+        if (!dryrun) _ = try child.spawnAndWait();
         try syslogEvent(.{ .banned = .{ .count = std.mem.count(u8, http.items, ", ") + 1 } });
     }
 
@@ -338,7 +345,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
             mail.items,
         }, a);
         child.expand_arg0 = .expand;
-        _ = try child.spawnAndWait();
+        if (!dryrun) _ = try child.spawnAndWait();
         try syslogEvent(.{ .banned = .{ .count = std.mem.count(u8, mail.items, ", ") + 1 } });
     }
 
@@ -348,7 +355,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
             sshd.items,
         }, a);
         child.expand_arg0 = .expand;
-        _ = try child.spawnAndWait();
+        if (!dryrun) _ = try child.spawnAndWait();
         try syslogEvent(.{ .banned = .{ .count = std.mem.count(u8, sshd.items, ", ") + 1 } });
     }
 }
