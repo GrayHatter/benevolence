@@ -434,7 +434,7 @@ const BanData = struct {
 
 var baddies: std.StringArrayHashMapUnmanaged(BanData) = .{};
 var ban_list_updated: bool = false;
-var goodies: std.StringArrayHashMapUnmanaged(BanData) = .{};
+var goodies: std.StringHashMapUnmanaged(void) = .{};
 
 const Groups = std.EnumArray(parser.Group, []const Detection);
 
