@@ -31,7 +31,7 @@ pub fn parseExtra(line: []const u8) ![]const u8 {
     return "";
 }
 
-pub fn parseLine(line: []const u8) !?Line {
+pub fn parseLine(line: []const u8) !?Event {
     return .{
         .src_addr = parseAddr(line) catch return null,
         .timestamp = try parseTime(line),
@@ -42,5 +42,5 @@ pub fn parseLine(line: []const u8) !?Line {
 const std = @import("std");
 const indexOfScalar = std.mem.indexOfScalar;
 const Addr = @import("../main.zig").Addr;
-const Line = @import("../main.zig").Line;
+const Event = @import("../Event.zig");
 const Detection = @import("../Detection.zig");

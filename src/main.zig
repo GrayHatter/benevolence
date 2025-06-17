@@ -328,7 +328,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         sshd.deinit(a);
     }
 
-    if (http.items.len > 2) {
+    if (http.items.len > 4) {
         var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
             "abuse-http",
             http.items,
@@ -340,7 +340,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         });
     }
 
-    if (mail.items.len > 2) {
+    if (mail.items.len > 4) {
         var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
             "abuse-mail",
             mail.items,
@@ -352,7 +352,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         });
     }
 
-    if (sshd.items.len > 2) {
+    if (sshd.items.len > 4) {
         var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
             "abuse-sshd",
             sshd.items,
@@ -405,10 +405,10 @@ fn readFile(a: Allocator, logfile: *LogFile) !usize {
             }
             gop.value_ptr.banned = false;
             switch (m.class) {
-                .dovecot => gop.value_ptr.count.mail += 9,
-                .nginx => gop.value_ptr.count.http += 1,
-                .postfix => gop.value_ptr.count.mail += 1,
-                .sshd => gop.value_ptr.count.sshd += 1,
+                .dovecot => gop.value_ptr.count.mail +|= 9,
+                .nginx => gop.value_ptr.count.http +|= 1,
+                .postfix => gop.value_ptr.count.mail +|= 1,
+                .sshd => gop.value_ptr.count.sshd +|= 1,
             }
         }
     }
@@ -416,15 +416,15 @@ fn readFile(a: Allocator, logfile: *LogFile) !usize {
 }
 
 const BanData = struct {
-    count: Count = .zero,
+    count: Heat = .zero,
     banned: bool = false,
 
-    pub const Count = struct {
-        http: usize,
-        mail: usize,
-        sshd: usize,
+    pub const Heat = struct {
+        http: u16,
+        mail: u16,
+        sshd: u16,
 
-        pub const zero: Count = .{
+        pub const zero: Heat = .{
             .http = 0,
             .mail = 0,
             .sshd = 0,
@@ -581,13 +581,9 @@ const Timestamp = packed struct(i64) {
     }
 };
 
-pub const Line = struct {
-    src_addr: Addr,
-    timestamp: i64,
-    extra: []const u8,
-};
+const Event = @import("Event.zig");
 
-fn parseLine(mean: Meaningful) !?Line {
+fn parseLine(mean: Meaningful) !?Event {
     return switch (mean.class) {
         .dovecot => parser.dovecot.parseLine(mean.line),
         .nginx => parser.nginx.parseLine(mean.line),
@@ -624,7 +620,7 @@ test parseLine {
         },
     };
 
-    const log_hits = &[_]Line{
+    const log_hits = &[_]Event{
         .{ .src_addr = .{ .ipv4 = [4]u8{ 117, 217, 120, 52 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 149, 255, 62, 135 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 64, 105, 146 } }, .timestamp = 0, .extra = "" },
