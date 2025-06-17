@@ -1,3 +1,8 @@
+pub const rules: []const Detection = &[_]Detection{
+    .{ .hit = ": Connection closed by invalid user" },
+    .{ .hit = ": Invalid user" },
+};
+
 pub fn filter(line: []const u8) bool {
     return indexOf(u8, line, "sshd-session[") != null;
 }
@@ -57,3 +62,4 @@ const std = @import("std");
 const indexOf = std.mem.indexOf;
 const Addr = @import("../main.zig").Addr;
 const Line = @import("../main.zig").Line;
+const Detection = @import("../Detection.zig");

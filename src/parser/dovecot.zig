@@ -1,3 +1,8 @@
+pub const rules: []const Detection = &[_]Detection{
+    .{ .hit = "(auth_failed): user" },
+    .{ .hit = "Connection closed (auth failed," },
+};
+
 pub fn filter(line: []const u8) bool {
     return indexOf(u8, line, "imap-login:") != null;
 }
@@ -36,3 +41,4 @@ const indexOf = std.mem.indexOf;
 const indexOfPos = std.mem.indexOfPos;
 const Addr = @import("../main.zig").Addr;
 const Line = @import("../main.zig").Line;
+const Detection = @import("../Detection.zig");

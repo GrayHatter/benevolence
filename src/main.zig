@@ -443,9 +443,7 @@ const Group = struct {
     sshd: []const Detection,
 };
 
-const Detection = struct {
-    hit: []const u8,
-};
+const Detection = @import("Detection.zig");
 
 const Class = enum {
     dovecot,
@@ -461,22 +459,10 @@ const Meaningful = struct {
 
 fn meaningful(line: []const u8) ?Meaningful {
     const rules: Group = .{
-        .dovecot = &[_]Detection{
-            .{ .hit = "(auth_failed): user" },
-            .{ .hit = "Connection closed (auth failed," },
-        },
-        .nginx = &[_]Detection{
-            .{ .hit = "/.env HTTP/" },
-            .{ .hit = "PHP/eval-stdin.php HTTP/1.1\" 404" },
-        },
-        .postfix = &[_]Detection{
-            .{ .hit = "SASL LOGIN authentication failed" },
-            .{ .hit = "SASL PLAIN authentication failed" },
-        },
-        .sshd = &[_]Detection{
-            .{ .hit = ": Connection closed by invalid user" },
-            .{ .hit = ": Invalid user" },
-        },
+        .dovecot = parser.dovecot.rules,
+        .nginx = parser.nginx.rules,
+        .postfix = parser.postfix.rules,
+        .sshd = parser.sshd.rules,
     };
 
     if (parser.dovecot.filter(line)) {

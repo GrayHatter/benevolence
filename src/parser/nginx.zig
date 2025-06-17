@@ -1,3 +1,8 @@
+pub const rules: []const Detection = &[_]Detection{
+    .{ .hit = "/.env HTTP/" },
+    .{ .hit = "PHP/eval-stdin.php HTTP/1.1\" 404" },
+};
+
 pub fn filter(line: []const u8) bool {
     var dots: usize = 0;
     var idx: usize = 0;
@@ -38,3 +43,4 @@ const std = @import("std");
 const indexOfScalar = std.mem.indexOfScalar;
 const Addr = @import("../main.zig").Addr;
 const Line = @import("../main.zig").Line;
+const Detection = @import("../Detection.zig");

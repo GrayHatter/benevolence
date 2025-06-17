@@ -1,3 +1,8 @@
+pub const rules: []const Detection = &[_]Detection{
+    .{ .hit = "SASL LOGIN authentication failed" },
+    .{ .hit = "SASL PLAIN authentication failed" },
+};
+
 pub fn filter(line: []const u8) bool {
     return indexOf(u8, line, " mail.warn postfix/") != null;
 }
@@ -35,3 +40,4 @@ const lastIndexOf = std.mem.lastIndexOf;
 const indexOfScalarPos = std.mem.indexOfScalarPos;
 const Addr = @import("../main.zig").Addr;
 const Line = @import("../main.zig").Line;
+const Detection = @import("../Detection.zig");
