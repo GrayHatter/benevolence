@@ -404,7 +404,7 @@ fn readFile(a: Allocator, logfile: *LogFile) !usize {
                 gop.value_ptr.count = .zero;
             }
             gop.value_ptr.banned = false;
-            switch (m.class) {
+            switch (m.group) {
                 .dovecot => gop.value_ptr.count.mail +|= 9,
                 .nginx => gop.value_ptr.count.http +|= 1,
                 .postfix => gop.value_ptr.count.mail +|= 1,
@@ -436,69 +436,30 @@ var baddies: std.StringArrayHashMapUnmanaged(BanData) = .{};
 var ban_list_updated: bool = false;
 var goodies: std.StringArrayHashMapUnmanaged(BanData) = .{};
 
-const Group = struct {
-    dovecot: []const Detection,
-    nginx: []const Detection,
-    postfix: []const Detection,
-    sshd: []const Detection,
-};
-
-const Detection = @import("Detection.zig");
-
-const Class = enum {
-    dovecot,
-    nginx,
-    postfix,
-    sshd,
-};
+const Groups = std.EnumArray(parser.Group, []const Detection);
 
 const Meaningful = struct {
-    class: Class,
+    group: parser.Group,
     line: []const u8,
 };
 
 fn meaningful(line: []const u8) ?Meaningful {
-    const rules: Group = .{
+    const rules: Groups = comptime .init(.{
         .dovecot = parser.dovecot.rules,
         .nginx = parser.nginx.rules,
         .postfix = parser.postfix.rules,
         .sshd = parser.sshd.rules,
-    };
+    });
 
-    if (parser.dovecot.filter(line)) {
-        inline for (rules.dovecot) |rule| {
-            if (indexOf(u8, line, rule.hit)) |_| {
-                return .{
-                    .class = .dovecot,
-                    .line = line,
-                };
-            }
-        }
-    } else if (parser.nginx.filter(line)) {
-        inline for (rules.nginx) |rule| {
-            if (indexOf(u8, line, rule.hit)) |_| {
-                return .{
-                    .class = .nginx,
-                    .line = line,
-                };
-            }
-        }
-    } else if (parser.postfix.filter(line)) {
-        inline for (rules.postfix) |rule| {
-            if (indexOf(u8, line, rule.hit)) |_| {
-                return .{
-                    .class = .postfix,
-                    .line = line,
-                };
-            }
-        }
-    } else if (parser.sshd.filter(line)) {
-        inline for (rules.sshd) |rule| {
-            if (indexOf(u8, line, rule.hit)) |_| {
-                return .{
-                    .class = .sshd,
-                    .line = line,
-                };
+    inline for (parser.Group.fields) |fld| {
+        if (parser.Filters.get(fld)(line)) {
+            inline for (comptime rules.get(fld)) |rule| {
+                if (indexOf(u8, line, rule.hit)) |_| {
+                    return .{
+                        .group = .dovecot,
+                        .line = line,
+                    };
+                }
             }
         }
     }
@@ -581,10 +542,8 @@ const Timestamp = packed struct(i64) {
     }
 };
 
-const Event = @import("Event.zig");
-
 fn parseLine(mean: Meaningful) !?Event {
-    return switch (mean.class) {
+    return switch (mean.group) {
         .dovecot => parser.dovecot.parseLine(mean.line),
         .nginx => parser.nginx.parseLine(mean.line),
         .postfix => parser.postfix.parseLine(mean.line),
@@ -595,25 +554,25 @@ fn parseLine(mean: Meaningful) !?Event {
 test parseLine {
     const log_lines: []const Meaningful = &[_]Meaningful{
         .{
-            .class = .postfix,
+            .group = .postfix,
             .line =
             \\May 30 22:00:35 gr mail.warn postfix/smtps/smtpd[27561]: warning: unknown[117.217.120.52]: SASL PLAIN authentication failed: (reason unavailable), sasl_username=gwe@gr.ht
             ,
         },
         .{
-            .class = .nginx,
+            .group = .nginx,
             .line =
             \\149.255.62.135 - - [29/May/2025:23:43:02 +0000] "GET /.well-known/acme-challenge/I2I61_4DQ3KA_0XG9NMR937P1-57Z3XQ HTTP/1.1" 200 47 "-" "Cpanel-HTTP-Client/1.0"
             ,
         },
         .{
-            .class = .sshd,
+            .group = .sshd,
             .line =
             \\May 29 15:21:53 gr auth.info sshd-session[25292]: banner exchange: Connection from 20.64.105.146 port 47144: invalid format
             ,
         },
         .{
-            .class = .dovecot,
+            .group = .dovecot,
             .line =
             \\Jun 12 19:24:38 imap-login: Info: Login aborted: Connection closed (auth failed, 3 attempts in 15 secs) (auth_failed): user=<eft>, method=PLAIN, rip=80.51.181.144, lip=127.4.20.69, TLS, session=<25Nw4GQ3Ms9QM7WQ>
             ,
@@ -638,6 +597,9 @@ fn sleep(ms: u64) void {
 
 const example_config = @import("example-config.zig");
 const parser = @import("parser.zig");
+const Event = @import("Event.zig");
+const Detection = @import("Detection.zig");
+const Actionable = @import("Actionable.zig");
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
