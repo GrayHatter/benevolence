@@ -212,7 +212,6 @@ pub fn main() !void {
         } else files_remaining += 1;
     }
 
-    var banned: usize = 0;
     while (files_remaining > 0) {
         for (log_files.items) |*lf| {
             if (!lf.watch) continue;
@@ -224,14 +223,14 @@ pub fn main() !void {
             };
         }
 
-        if (baddies.count() > banned) {
+        if (ban_list_updated) {
             if (exec_rules) {
                 try execBanList(a, timeout);
             } else {
                 if (!quiet) try printBanList(a, stdout.any(), timeout);
                 try bw.flush();
             }
-            banned = baddies.count();
+            ban_list_updated = false;
         }
         sleep(500);
     }
@@ -336,7 +335,9 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         if (!dryrun) _ = try child.spawnAndWait();
-        try syslogEvent(.{ .banned = .{ .count = std.mem.count(u8, http.items, ", ") + 1 } });
+        try syslogEvent(.{
+            .banned = .{ .count = std.mem.count(u8, http.items, ", ") + 1 },
+        });
     }
 
     if (mail.items.len > 2) {
@@ -346,7 +347,9 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         if (!dryrun) _ = try child.spawnAndWait();
-        try syslogEvent(.{ .banned = .{ .count = std.mem.count(u8, mail.items, ", ") + 1 } });
+        try syslogEvent(.{
+            .banned = .{ .count = std.mem.count(u8, mail.items, ", ") + 1 },
+        });
     }
 
     if (sshd.items.len > 2) {
@@ -356,7 +359,9 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         if (!dryrun) _ = try child.spawnAndWait();
-        try syslogEvent(.{ .banned = .{ .count = std.mem.count(u8, sshd.items, ", ") + 1 } });
+        try syslogEvent(.{
+            .banned = .{ .count = std.mem.count(u8, sshd.items, ", ") + 1 },
+        });
     }
 }
 
@@ -389,7 +394,10 @@ fn readFile(a: Allocator, logfile: *LogFile) !usize {
         if (meaningful(line)) |m| {
             const res = try parseLine(m) orelse continue;
 
-            const paddr = try std.fmt.allocPrint(a, "{}", .{res.src_addr});
+            var b: [0xff]u8 = undefined;
+            const paddr = try std.fmt.bufPrint(&b, "{}", .{res.src_addr});
+
+            ban_list_updated = true;
             const gop = try baddies.getOrPut(a, paddr);
             if (!gop.found_existing) {
                 gop.key_ptr.* = try a.dupe(u8, paddr);
@@ -424,8 +432,9 @@ const BanData = struct {
     };
 };
 
-var baddies: std.StringHashMapUnmanaged(BanData) = .{};
-var goodies: std.StringHashMapUnmanaged(BanData) = .{};
+var baddies: std.StringArrayHashMapUnmanaged(BanData) = .{};
+var ban_list_updated: bool = false;
+var goodies: std.StringArrayHashMapUnmanaged(BanData) = .{};
 
 const Group = struct {
     dovecot: []const Detection,
