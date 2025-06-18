@@ -117,7 +117,6 @@ const LogFile = struct {
 };
 
 var file_buf: [64]LogFile = undefined;
-var syslog: bool = false;
 var dryrun: bool = false;
 var exec_rules: bool = false;
 
@@ -159,7 +158,7 @@ pub fn main() !void {
             } else if (eql(u8, arg, "--quiet")) {
                 quiet = true;
             } else if (eql(u8, arg, "--syslog")) {
-                syslog = true;
+                syslog.enabled = true;
             } else if (eql(u8, arg, "--ban-time")) {
                 timeout = bufPrint(
                     &to_buf,
@@ -279,43 +278,6 @@ fn genLists(a: Allocator, timeout: []const u8) ![3]std.ArrayListUnmanaged(u8) {
     };
 }
 
-const SyslogEvent = union(enum) {
-    banned: Banned,
-
-    pub const Banned = struct {
-        count: usize,
-    };
-};
-
-fn syslogEvent(evt: SyslogEvent) !void {
-    if (!syslog) return;
-
-    switch (evt) {
-        .banned => |ban| {
-            var b: [0x2ff]u8 = undefined;
-            const pri: u8 = 4 * 8 + 4;
-            const tag: []const u8 = "benevolence";
-            const pid = std.os.linux.getpid();
-            const msg = try std.fmt.bufPrint(&b, "<{}> {s}[{}]: banned {}", .{ pri, tag, pid, ban.count });
-
-            var addr: std.posix.sockaddr.un = .{
-                .family = std.posix.AF.UNIX,
-                .path = @splat(0),
-            };
-            @memcpy(addr.path[0..8], "/dev/log");
-            const s = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.DGRAM, 0);
-            try std.posix.connect(
-                s,
-                @ptrCast(&addr),
-                @as(std.posix.socklen_t, @intCast(@sizeOf(@TypeOf(addr)))),
-            );
-            defer std.posix.close(s);
-
-            _ = try std.posix.write(s, msg);
-        },
-    }
-}
-
 fn execBanList(a: Allocator, timeout: []const u8) !void {
     const cmd_base = [_][]const u8{
         "nft", "add", "element", "inet", "filter",
@@ -335,7 +297,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         if (!dryrun) _ = try child.spawnAndWait();
-        try syslogEvent(.{
+        try syslog.log(.{
             .banned = .{ .count = std.mem.count(u8, http.items, ", ") + 1 },
         });
     }
@@ -347,7 +309,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         if (!dryrun) _ = try child.spawnAndWait();
-        try syslogEvent(.{
+        try syslog.log(.{
             .banned = .{ .count = std.mem.count(u8, mail.items, ", ") + 1 },
         });
     }
@@ -359,7 +321,7 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         if (!dryrun) _ = try child.spawnAndWait();
-        try syslogEvent(.{
+        try syslog.log(.{
             .banned = .{ .count = std.mem.count(u8, sshd.items, ", ") + 1 },
         });
     }
@@ -530,6 +492,7 @@ fn sleep(ms: u64) void {
 }
 
 const example_config = @import("example-config.zig");
+const syslog = @import("syslog.zig");
 const parser = @import("parser.zig");
 const Event = @import("Event.zig");
 const Detection = @import("Detection.zig");
