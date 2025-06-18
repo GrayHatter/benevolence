@@ -278,11 +278,24 @@ fn genLists(a: Allocator, timeout: []const u8) ![3]std.ArrayListUnmanaged(u8) {
     };
 }
 
-fn execBanList(a: Allocator, timeout: []const u8) !void {
+fn execList(comptime str: []const u8, a: Allocator, items: []const u8) !void {
     const cmd_base = [_][]const u8{
         "nft", "add", "element", "inet", "filter",
     };
 
+    var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
+        "abuse-" ++ str,
+        items,
+    }, a);
+    child.expand_arg0 = .expand;
+    if (!dryrun) _ = try child.spawnAndWait();
+    const count = std.mem.count(u8, items, ", ") + 1;
+    try syslog.log(.{
+        .banned = .{ .count = count, .surface = str, .src = items },
+    });
+}
+
+fn execBanList(a: Allocator, timeout: []const u8) !void {
     var http, var mail, var sshd = try genLists(a, timeout);
     defer {
         http.deinit(a);
@@ -290,44 +303,9 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         sshd.deinit(a);
     }
 
-    if (http.items.len > 4) {
-        var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
-            "abuse-http",
-            http.items,
-        }, a);
-        child.expand_arg0 = .expand;
-        if (!dryrun) _ = try child.spawnAndWait();
-        const count = std.mem.count(u8, http.items, ", ") + 1;
-        try syslog.log(.{
-            .banned = .{ .count = count, .surface = "http" },
-        });
-    }
-
-    if (mail.items.len > 4) {
-        var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
-            "abuse-mail",
-            mail.items,
-        }, a);
-        child.expand_arg0 = .expand;
-        if (!dryrun) _ = try child.spawnAndWait();
-        const count = std.mem.count(u8, http.items, ", ") + 1;
-        try syslog.log(.{
-            .banned = .{ .count = count, .surface = "mail" },
-        });
-    }
-
-    if (sshd.items.len > 4) {
-        var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
-            "abuse-sshd",
-            sshd.items,
-        }, a);
-        child.expand_arg0 = .expand;
-        if (!dryrun) _ = try child.spawnAndWait();
-        const count = std.mem.count(u8, http.items, ", ") + 1;
-        try syslog.log(.{
-            .banned = .{ .count = count, .surface = "sshd" },
-        });
-    }
+    if (http.items.len > 4) try execList("http", a, http.items);
+    if (mail.items.len > 4) try execList("mail", a, mail.items);
+    if (sshd.items.len > 4) try execList("sshd", a, sshd.items);
 }
 
 fn printBanList(a: Allocator, stdout: std.io.AnyWriter, timeout: []const u8) !void {
