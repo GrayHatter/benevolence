@@ -348,10 +348,10 @@ fn readFile(a: Allocator, logfile: *LogFile) !usize {
             }
             gop.value_ptr.banned = false;
             switch (m.group) {
-                .dovecot => gop.value_ptr.count.mail +|= 9,
-                .nginx => gop.value_ptr.count.http +|= 1,
-                .postfix => gop.value_ptr.count.mail +|= 1,
-                .sshd => gop.value_ptr.count.sshd +|= 1,
+                .dovecot => gop.value_ptr.count.mail +|= m.rule.heat,
+                .nginx => gop.value_ptr.count.http +|= m.rule.heat,
+                .postfix => gop.value_ptr.count.mail +|= m.rule.heat,
+                .sshd => gop.value_ptr.count.sshd +|= m.rule.heat,
             }
         }
     }
@@ -383,6 +383,7 @@ const Groups = std.EnumArray(parser.Group, []const Detection);
 
 const Meaningful = struct {
     group: parser.Group,
+    rule: Detection,
     line: []const u8,
 };
 
@@ -399,7 +400,8 @@ fn meaningful(line: []const u8) ?Meaningful {
             inline for (comptime rules.get(fld)) |rule| {
                 if (indexOf(u8, line, rule.hit)) |_| {
                     return .{
-                        .group = .dovecot,
+                        .group = fld,
+                        .rule = rule,
                         .line = line,
                     };
                 }
