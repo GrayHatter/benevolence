@@ -297,8 +297,9 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         if (!dryrun) _ = try child.spawnAndWait();
+        const count = std.mem.count(u8, http.items, ", ") + 1;
         try syslog.log(.{
-            .banned = .{ .count = std.mem.count(u8, http.items, ", ") + 1 },
+            .banned = .{ .count = count, .surface = "http" },
         });
     }
 
@@ -309,8 +310,9 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         if (!dryrun) _ = try child.spawnAndWait();
+        const count = std.mem.count(u8, http.items, ", ") + 1;
         try syslog.log(.{
-            .banned = .{ .count = std.mem.count(u8, mail.items, ", ") + 1 },
+            .banned = .{ .count = count, .surface = "mail" },
         });
     }
 
@@ -321,8 +323,9 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
         }, a);
         child.expand_arg0 = .expand;
         if (!dryrun) _ = try child.spawnAndWait();
+        const count = std.mem.count(u8, http.items, ", ") + 1;
         try syslog.log(.{
-            .banned = .{ .count = std.mem.count(u8, sshd.items, ", ") + 1 },
+            .banned = .{ .count = count, .surface = "sshd" },
         });
     }
 }
