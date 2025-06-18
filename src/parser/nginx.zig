@@ -1,5 +1,6 @@
 pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "/.env HTTP/" },
+    .{ .hit = "GET /.git/config " },
     .{ .hit = "PHP/eval-stdin.php HTTP/1.1\" 404" },
 };
 
