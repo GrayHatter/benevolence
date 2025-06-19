@@ -1,6 +1,7 @@
 pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "SASL LOGIN authentication failed", .heat = 10 },
     .{ .hit = "SASL PLAIN authentication failed", .heat = 10 },
+    .{ .hit = "NOQUEUE: lost connection after AUTH from", .heat = 1 },
 };
 
 pub fn filter(line: []const u8) bool {
