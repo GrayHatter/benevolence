@@ -433,24 +433,28 @@ fn parseLine(mean: Meaningful) !?Event {
 test parseLine {
     const log_lines: []const Meaningful = &[_]Meaningful{
         .{
+            .rule = .{ .hit = "" },
             .group = .postfix,
             .line =
             \\May 30 22:00:35 gr mail.warn postfix/smtps/smtpd[27561]: warning: unknown[117.217.120.52]: SASL PLAIN authentication failed: (reason unavailable), sasl_username=gwe@gr.ht
             ,
         },
         .{
+            .rule = .{ .hit = "" },
             .group = .nginx,
             .line =
             \\149.255.62.135 - - [29/May/2025:23:43:02 +0000] "GET /.well-known/acme-challenge/I2I61_4DQ3KA_0XG9NMR937P1-57Z3XQ HTTP/1.1" 200 47 "-" "Cpanel-HTTP-Client/1.0"
             ,
         },
         .{
+            .rule = .{ .hit = "" },
             .group = .sshd,
             .line =
             \\May 29 15:21:53 gr auth.info sshd-session[25292]: banner exchange: Connection from 20.64.105.146 port 47144: invalid format
             ,
         },
         .{
+            .rule = .{ .hit = "" },
             .group = .dovecot,
             .line =
             \\Jun 12 19:24:38 imap-login: Info: Login aborted: Connection closed (auth failed, 3 attempts in 15 secs) (auth_failed): user=<eft>, method=PLAIN, rip=80.51.181.144, lip=127.4.20.69, TLS, session=<25Nw4GQ3Ms9QM7WQ>
