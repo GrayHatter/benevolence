@@ -156,15 +156,15 @@ fn genLists(a: Allocator, timeout: []const u8) ![3]std.ArrayListUnmanaged(u8) {
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
         if (kv.value_ptr.banned) continue;
-        if (kv.value_ptr.count.http >= 2) {
+        if (kv.value_ptr.heat.http >= 2) {
             var w = banlist_http.writer(a);
             try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
         }
-        if (kv.value_ptr.count.mail >= 2) {
+        if (kv.value_ptr.heat.mail >= 2) {
             var w = banlist_mail.writer(a);
             try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
         }
-        if (kv.value_ptr.count.sshd >= 2) {
+        if (kv.value_ptr.heat.sshd >= 2) {
             var w = banlist_sshd.writer(a);
             try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
         }
@@ -251,14 +251,14 @@ fn readFile(a: Allocator, logfile: *File) !usize {
             const gop = try baddies.getOrPut(a, paddr);
             if (!gop.found_existing) {
                 gop.key_ptr.* = try a.dupe(u8, paddr);
-                gop.value_ptr.count = .zero;
+                gop.value_ptr.heat = .zero;
             }
             gop.value_ptr.banned = false;
             switch (m.group) {
-                .dovecot => gop.value_ptr.count.mail +|= m.rule.heat,
-                .nginx => gop.value_ptr.count.http +|= m.rule.heat,
-                .postfix => gop.value_ptr.count.mail +|= m.rule.heat,
-                .sshd => gop.value_ptr.count.sshd +|= m.rule.heat,
+                .dovecot => gop.value_ptr.heat.mail +|= m.rule.heat,
+                .nginx => gop.value_ptr.heat.http +|= m.rule.heat,
+                .postfix => gop.value_ptr.heat.mail +|= m.rule.heat,
+                .sshd => gop.value_ptr.heat.sshd +|= m.rule.heat,
             }
         }
     }
@@ -266,7 +266,7 @@ fn readFile(a: Allocator, logfile: *File) !usize {
 }
 
 const BanData = struct {
-    count: Heat = .zero,
+    heat: Heat = .zero,
     banned: bool = false,
 
     pub const Heat = struct {
