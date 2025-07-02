@@ -242,23 +242,36 @@ fn readFile(a: Allocator, logfile: *File) !usize {
     while (try logfile.line()) |line| {
         line_count += 1;
         if (meaningful(line)) |m| {
-            const res = try parseLine(m) orelse continue;
+            const event = try parseLine(m) orelse continue;
 
             var b: [0xff]u8 = undefined;
-            const paddr = try std.fmt.bufPrint(&b, "{}", .{res.src_addr});
+            const paddr = try std.fmt.bufPrint(&b, "{}", .{event.src_addr});
 
             ban_list_updated = true;
             const gop = try baddies.getOrPut(a, paddr);
             if (!gop.found_existing) {
                 gop.key_ptr.* = try a.dupe(u8, paddr);
                 gop.value_ptr.heat = .zero;
+                gop.value_ptr.time = .zero;
             }
             gop.value_ptr.banned = false;
             switch (m.group) {
-                .dovecot => gop.value_ptr.heat.mail +|= m.rule.heat,
-                .nginx => gop.value_ptr.heat.http +|= m.rule.heat,
-                .postfix => gop.value_ptr.heat.mail +|= m.rule.heat,
-                .sshd => gop.value_ptr.heat.sshd +|= m.rule.heat,
+                .dovecot => {
+                    gop.value_ptr.heat.mail +|= m.rule.heat;
+                    gop.value_ptr.time.mail = @max(m.rule.ban_time orelse 0, gop.value_ptr.time.mail);
+                },
+                .nginx => {
+                    gop.value_ptr.heat.http +|= m.rule.heat;
+                    gop.value_ptr.time.http = @max(m.rule.ban_time orelse 0, gop.value_ptr.time.http);
+                },
+                .postfix => {
+                    gop.value_ptr.heat.mail +|= m.rule.heat;
+                    gop.value_ptr.time.mail = @max(m.rule.ban_time orelse 0, gop.value_ptr.time.mail);
+                },
+                .sshd => {
+                    gop.value_ptr.heat.sshd +|= m.rule.heat;
+                    gop.value_ptr.time.sshd = @max(m.rule.ban_time orelse 0, gop.value_ptr.time.sshd);
+                },
             }
         }
     }
@@ -267,6 +280,7 @@ fn readFile(a: Allocator, logfile: *File) !usize {
 
 const BanData = struct {
     heat: Heat = .zero,
+    time: Time = .zero,
     banned: bool = false,
 
     pub const Heat = struct {
@@ -275,6 +289,18 @@ const BanData = struct {
         sshd: u16,
 
         pub const zero: Heat = .{
+            .http = 0,
+            .mail = 0,
+            .sshd = 0,
+        };
+    };
+
+    pub const Time = struct {
+        http: u32,
+        mail: u32,
+        sshd: u32,
+
+        pub const zero: Time = .{
             .http = 0,
             .mail = 0,
             .sshd = 0,
