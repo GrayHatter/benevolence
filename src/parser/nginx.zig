@@ -1,7 +1,26 @@
 pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "/.env HTTP/" },
     .{ .hit = "GET /.git/config " },
-    .{ .hit = "PHP/eval-stdin.php HTTP/1.1\" 404" },
+    .{ .hit = "PHP/eval-stdin.php HTTP/1." },
+    .{ .hit = "GET /config.json HTTP/" },
+    .{ .hit = "GET /_all_dbs HTTP/" },
+    .{ .hit = "GET /.DS_Store HTTP/" },
+    .{ .hit = "GET /.env HTTP/" },
+    .{ .hit = "GET /.git/config HTTP/" },
+    .{ .hit = "GET /.vscode/sftp.json HTTP/" },
+    .{ .hit = "GET /info.php HTTP/1.1\" 40" },
+};
+
+pub const rules_extra: []const Detection = &[_]Detection{
+    .{ .hit = "GET /@vite/env HTTP/" },
+    .{ .hit = "GET /actuator/env HTTP/" },
+    .{ .hit = "GET /debug/default/view?panel=config HTTP/" },
+    .{ .hit = "GET /v2/_catalog HTTP/" },
+    .{ .hit = "GET /ecp/Current/exporttool/microsoft.exchange.ediscovery.exporttool.application HTTP/" },
+    .{ .hit = "GET /server-status HTTP/" },
+    .{ .hit = "/META-INF/maven/com.atlassian.jira/jira-webapp-dist/pom.properties HTTP/" },
+    .{ .hit = "GET /telescope/requests HTTP/" },
+    .{ .hit = "GET /?rest_route=/wp/v2/users/ HTTP/" },
 };
 
 pub fn filter(line: []const u8) bool {
