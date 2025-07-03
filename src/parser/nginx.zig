@@ -7,6 +7,9 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "GET /.DS_Store HTTP/" },
     .{ .hit = "GET /.env HTTP/" },
     .{ .hit = "GET /.git/config HTTP/" },
+    .{ .hit = "GET /.git/HEAD HTTP/" },
+    .{ .hit = "GET /.aws/config HTTP" },
+    .{ .hit = "GET /.aws/credentials HTTP" },
     .{ .hit = "GET /.vscode/sftp.json HTTP/" },
     .{ .hit = "GET /info.php HTTP/1.1\" 40" },
 };
