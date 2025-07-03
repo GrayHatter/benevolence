@@ -7,6 +7,9 @@ fn usage(arg0: []const u8) noreturn {
         \\
         \\Options:
         \\
+        \\    -c                <filename>      Config file
+        \\    -d                                Daemonize [fork to background | not implemented]
+        \\
         \\    --example                         Print an example nft config then exit
         \\    --exec                            Install banned elements into nft
         \\    --syslog                          Log ban events to syslog [logger]
@@ -24,8 +27,18 @@ fn usage(arg0: []const u8) noreturn {
 }
 
 var file_buf: [64]File = undefined;
-var dryrun: bool = false;
-var exec_rules: bool = false;
+
+const Config = struct {
+    default_watch: bool = false,
+    quiet: bool = false,
+    bantime: []const u8 = "",
+    config_arg: ?[]const u8 = null,
+    dryrun: bool = false,
+    exec_rules: bool = false,
+};
+
+var c: Config = .{};
+var bantime_buf: [32]u8 = @splat(' ');
 
 pub fn main() !void {
     const stdout_file = std.io.getStdOut().writer();
@@ -42,11 +55,6 @@ pub fn main() !void {
     // TODO 20 ought to be enough for anyone
     var log_files: std.ArrayListUnmanaged(File) = .initBuffer(&file_buf);
 
-    var default_watch: bool = false;
-    var quiet: bool = false;
-    var to_buf: [32]u8 = @splat(' ');
-    var timeout: []const u8 = "";
-
     while (args.next()) |arg| {
         if (log_files.items.len >= file_buf.len) {
             std.debug.print("PANIC: too many log files given\n", .{});
@@ -59,16 +67,16 @@ pub fn main() !void {
                 try stdout.writeAll(example_config.nft);
                 return;
             } else if (eql(u8, arg, "--exec")) {
-                exec_rules = true;
+                c.exec_rules = true;
             } else if (eql(u8, arg, "--dry-run")) {
-                dryrun = true;
+                c.dryrun = true;
             } else if (eql(u8, arg, "--quiet")) {
-                quiet = true;
+                c.quiet = true;
             } else if (eql(u8, arg, "--syslog")) {
                 syslog.enabled = true;
             } else if (eql(u8, arg, "--ban-time")) {
-                timeout = bufPrint(
-                    &to_buf,
+                c.bantime = bufPrint(
+                    &bantime_buf,
                     " timeout {s}",
                     .{args.next() orelse usage(arg0)},
                 ) catch usage(arg0);
@@ -84,13 +92,24 @@ pub fn main() !void {
                     usage(arg0);
                 };
                 log_files.appendAssumeCapacity(try .init(filename, true));
-                default_watch = true;
+                c.default_watch = true;
             } else {
                 usage(arg0);
             }
+        } else if (startsWith(u8, arg, "-")) {
+            if (eql(u8, arg, "-c")) {
+                c.config_arg = args.next() orelse {
+                    std.debug.print("error: -c requires a filename\n", .{});
+                    usage(arg0);
+                };
+            }
         } else {
-            log_files.appendAssumeCapacity(try .init(arg, default_watch));
+            log_files.appendAssumeCapacity(try .init(arg, c.default_watch));
         }
+    }
+
+    if (c.config_arg) |ca| {
+        try parseConfig(ca, &log_files);
     }
 
     if (log_files.items.len == 0) usage(arg0);
@@ -104,10 +123,10 @@ pub fn main() !void {
         }
     }
 
-    if (exec_rules) {
-        try execBanList(a, timeout);
+    if (c.exec_rules) {
+        try execBanList(a);
     } else {
-        if (!quiet) try printBanList(a, stdout.any(), timeout);
+        if (!c.quiet) try printBanList(a, stdout.any());
         try bw.flush();
     }
 
@@ -130,10 +149,10 @@ pub fn main() !void {
         }
 
         if (ban_list_updated) {
-            if (exec_rules) {
-                try execBanList(a, timeout);
+            if (c.exec_rules) {
+                try execBanList(a);
             } else {
-                if (!quiet) try printBanList(a, stdout.any(), timeout);
+                if (!c.quiet) try printBanList(a, stdout.any());
                 try bw.flush();
             }
             ban_list_updated = false;
@@ -142,7 +161,59 @@ pub fn main() !void {
     }
 }
 
-fn genLists(a: Allocator, timeout: []const u8) ![3]std.ArrayListUnmanaged(u8) {
+fn parseConfig(
+    fname: []const u8,
+    log_files: *std.ArrayListUnmanaged(File),
+) !void {
+    const fd = try std.fs.cwd().openFile(fname, .{});
+    const config = try std.posix.mmap(
+        null,
+        try fd.getEndPos(),
+        std.posix.PROT.READ,
+        .{ .TYPE = .SHARED },
+        fd.handle,
+        0,
+    );
+    fd.close();
+    syslog.enabled = true;
+
+    var fbs = std.io.FixedBufferStream([]const u8){ .buffer = config, .pos = 0 };
+    var reader = fbs.reader();
+    var line_buf: [2048]u8 = undefined;
+    const line = try reader.readUntilDelimiterOrEof(&line_buf, '\n') orelse return;
+    try parseConfigLine(line, log_files);
+}
+
+fn parseConfigLine(full: []const u8, log_files: *std.ArrayListUnmanaged(File)) !void {
+    const line = std.mem.trim(u8, full, " \t\n");
+    if (line.len < 4) return;
+    if (line[0] == '#') return;
+
+    const arg: ?[]const u8 = if (indexOf(u8, line, "=")) |i|
+        std.mem.trim(u8, line[i + 1 ..], " \t\n")
+    else
+        null;
+
+    if (startsWith(u8, line, "file")) {
+        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true));
+    } else if (startsWith(u8, line, "sshd")) {
+        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true));
+    } else if (startsWith(u8, line, "postfix")) {
+        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true));
+    } else if (startsWith(u8, line, "nginx")) {
+        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true));
+    } else if (startsWith(u8, line, "dovecot")) {
+        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true));
+    } else if (startsWith(u8, line, "syslog")) {
+        syslog.enabled = true; // TODO support false and disabled
+    } else if (startsWith(u8, line, "bantime")) {
+        if (indexOf(u8, line, "=")) |i| {
+            c.bantime = try bufPrint(&bantime_buf, " timeout {s}", .{std.mem.trim(u8, line[i + 1 ..], " \t\n")});
+        }
+    }
+}
+
+fn genLists(a: Allocator) ![3]std.ArrayListUnmanaged(u8) {
     var banlist_http: std.ArrayListUnmanaged(u8) = .{};
     var banlist_mail: std.ArrayListUnmanaged(u8) = .{};
     var banlist_sshd: std.ArrayListUnmanaged(u8) = .{};
@@ -158,15 +229,15 @@ fn genLists(a: Allocator, timeout: []const u8) ![3]std.ArrayListUnmanaged(u8) {
         if (kv.value_ptr.banned) continue;
         if (kv.value_ptr.heat.http >= 2) {
             var w = banlist_http.writer(a);
-            try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
+            try w.print(", {s}{s}", .{ kv.key_ptr.*, c.bantime });
         }
         if (kv.value_ptr.heat.mail >= 2) {
             var w = banlist_mail.writer(a);
-            try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
+            try w.print(", {s}{s}", .{ kv.key_ptr.*, c.bantime });
         }
         if (kv.value_ptr.heat.sshd >= 2) {
             var w = banlist_sshd.writer(a);
-            try w.print(", {s}{s}", .{ kv.key_ptr.*, timeout });
+            try w.print(", {s}{s}", .{ kv.key_ptr.*, c.bantime });
         }
         kv.value_ptr.banned = true;
     }
@@ -195,15 +266,15 @@ fn execList(comptime str: []const u8, a: Allocator, items: []const u8) !void {
         items,
     }, a);
     child.expand_arg0 = .expand;
-    if (!dryrun) _ = try child.spawnAndWait();
+    if (!c.dryrun) _ = try child.spawnAndWait();
     const count = std.mem.count(u8, items, ", ") + 1;
     try syslog.log(.{
         .banned = .{ .count = count, .surface = str, .src = items },
     });
 }
 
-fn execBanList(a: Allocator, timeout: []const u8) !void {
-    var http, var mail, var sshd = try genLists(a, timeout);
+fn execBanList(a: Allocator) !void {
+    var http, var mail, var sshd = try genLists(a);
     defer {
         http.deinit(a);
         mail.deinit(a);
@@ -215,8 +286,8 @@ fn execBanList(a: Allocator, timeout: []const u8) !void {
     if (sshd.items.len > 4) try execList("sshd", a, sshd.items);
 }
 
-fn printBanList(a: Allocator, stdout: std.io.AnyWriter, timeout: []const u8) !void {
-    var http, var mail, var sshd = try genLists(a, timeout);
+fn printBanList(a: Allocator, stdout: std.io.AnyWriter) !void {
+    var http, var mail, var sshd = try genLists(a);
     defer {
         http.deinit(a);
         mail.deinit(a);
