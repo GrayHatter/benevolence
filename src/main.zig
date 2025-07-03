@@ -301,6 +301,7 @@ test "parseConfig multi" {
 }
 
 fn genLists(a: Allocator) ![3]std.ArrayListUnmanaged(u8) {
+    const ts = std.time.timestamp();
     var banlist_http: std.ArrayListUnmanaged(u8) = .{};
     var banlist_mail: std.ArrayListUnmanaged(u8) = .{};
     var banlist_sshd: std.ArrayListUnmanaged(u8) = .{};
@@ -313,7 +314,7 @@ fn genLists(a: Allocator) ![3]std.ArrayListUnmanaged(u8) {
 
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
-        if (kv.value_ptr.banned) continue;
+        if (ts - 15 > kv.value_ptr.banned orelse ts) continue;
         if (kv.value_ptr.heat.http >= 2) {
             var w = banlist_http.writer(a);
             try w.print(", {s}{s}", .{ kv.key_ptr.*, c.bantime });
@@ -326,7 +327,7 @@ fn genLists(a: Allocator) ![3]std.ArrayListUnmanaged(u8) {
             var w = banlist_sshd.writer(a);
             try w.print(", {s}{s}", .{ kv.key_ptr.*, c.bantime });
         }
-        kv.value_ptr.banned = true;
+        kv.value_ptr.banned = ts;
     }
 
     try banlist_http.appendSlice(a, " }");
@@ -409,10 +410,11 @@ fn readFile(a: Allocator, logfile: *File) !usize {
             const gop = try baddies.getOrPut(a, paddr);
             if (!gop.found_existing) {
                 gop.key_ptr.* = try a.dupe(u8, paddr);
-                gop.value_ptr.heat = .zero;
-                gop.value_ptr.time = .zero;
+                gop.value_ptr.* = .{};
             }
-            gop.value_ptr.banned = false;
+            if (gop.value_ptr.banned) |banned| {
+                if (banned < std.time.timestamp() - 3) gop.value_ptr.banned = null;
+            }
             switch (m.format) {
                 .dovecot => {
                     gop.value_ptr.heat.mail +|= m.rule.heat;
@@ -439,7 +441,7 @@ fn readFile(a: Allocator, logfile: *File) !usize {
 const BanData = struct {
     heat: Heat = .zero,
     time: Time = .zero,
-    banned: bool = false,
+    banned: ?i64 = null,
 
     pub const Heat = struct {
         http: u16,
