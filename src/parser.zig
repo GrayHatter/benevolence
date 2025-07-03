@@ -25,6 +25,29 @@ pub const nginx = @import("parser/nginx.zig");
 pub const postfix = @import("parser/postfix.zig");
 pub const sshd = @import("parser/sshd.zig");
 
+pub const Bound = struct {
+    str: []const u8,
+    index: usize,
+};
+
+pub fn boundedSearchRev(comptime pre: []const u8, comptime post: []const u8, line: []const u8) ?Bound {
+    if (std.mem.indexOfPos(u8, line, post)) |j| {
+        if (std.mem.lastIndexOf(u8, line[0..j], pre)) |i| {
+            return .{ .str = line[i + pre.len .. j], .index = i + pre.len };
+        }
+    }
+    return null;
+}
+
+pub fn boundedSearch(comptime pre: []const u8, comptime post: []const u8, line: []const u8) ?Bound {
+    if (std.mem.indexOf(u8, line, pre)) |i| {
+        if (std.mem.indexOfPos(u8, line, i, post)) |j| {
+            return .{ .str = line[i + pre.len .. j], .index = i + pre.len };
+        }
+    }
+    return null;
+}
+
 fn parseTimeSyslog(str: []const u8) !i64 {
     if (str.len < 14) return error.NotSysLogFmt;
 
