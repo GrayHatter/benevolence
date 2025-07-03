@@ -67,9 +67,14 @@ pub fn main() !void {
                 try stdout.writeAll(example_config.nft);
                 return;
             } else if (eql(u8, arg, "--exec")) {
+                if (c.dryrun == true) {
+                    std.debug.print("error: --exec and --dry-run are incompatible\n", .{});
+                    usage(arg0);
+                }
                 c.exec_rules = true;
             } else if (eql(u8, arg, "--dry-run")) {
                 c.dryrun = true;
+                c.exec_rules = false;
             } else if (eql(u8, arg, "--quiet")) {
                 c.quiet = true;
             } else if (eql(u8, arg, "--syslog")) {
@@ -171,6 +176,7 @@ fn parseConfig(
     );
     fd.close();
     syslog.enabled = true;
+    if (!c.dryrun) c.exec_rules = true;
 
     var fbs = std.io.FixedBufferStream([]const u8){ .buffer = config, .pos = 0 };
     var reader = fbs.reader();
@@ -203,10 +209,10 @@ fn parseConfigLine(full: []const u8, log_files: *std.ArrayListUnmanaged(File)) !
                 c.bantime = try bufPrint(&bantime_buf, " timeout {s}", .{std.mem.trim(u8, line[i + 1 ..], " \t\n")});
             }
         }
-    } else {
-        if (startsWith(u8, line, "syslog")) {
-            syslog.enabled = true; // TODO support false and disabled
-        }
+    }
+
+    if (startsWith(u8, line, "syslog")) {
+        syslog.enabled = true; // TODO support false and disabled
     }
 }
 
