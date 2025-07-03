@@ -62,7 +62,7 @@ pub fn log(evt: Event) !void {
             const pid = std.os.linux.getpid();
             try w.print("<{}> {s}[{}]: banned {} addr", .{ pri, tag, pid, ban.count });
             if (ban.src) |bansrc| {
-                if (bansrc.len < 32) try w.print(" [{s}]", .{bansrc});
+                if (bansrc.len < 256) try w.print(" [{s}]", .{bansrc});
             }
             try w.print(" from {s}", .{ban.surface});
 
