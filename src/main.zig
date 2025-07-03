@@ -185,35 +185,56 @@ fn parseConfigLine(full: []const u8, log_files: *std.ArrayListUnmanaged(File)) !
     if (line.len < 4) return;
     if (line[0] == '#') return;
 
-    const arg: ?[]const u8 = if (indexOf(u8, line, "=")) |i|
-        std.mem.trim(u8, line[i + 1 ..], " \t\n")
-    else
-        null;
-
-    if (startsWith(u8, line, "file")) {
-        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true, null));
-    } else if (startsWith(u8, line, "sshd")) {
-        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true, .sshd));
-    } else if (startsWith(u8, line, "postfix")) {
-        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true, .postfix));
-    } else if (startsWith(u8, line, "nginx")) {
-        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true, .nginx));
-    } else if (startsWith(u8, line, "dovecot")) {
-        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true, .dovecot));
-    } else if (startsWith(u8, line, "syslog")) {
-        syslog.enabled = true; // TODO support false and disabled
-    } else if (startsWith(u8, line, "bantime")) {
-        if (indexOf(u8, line, "=")) |i| {
-            c.bantime = try bufPrint(&bantime_buf, " timeout {s}", .{std.mem.trim(u8, line[i + 1 ..], " \t\n")});
+    if (indexOf(u8, line, "=")) |argidx| {
+        const arg: []const u8 = std.mem.trim(u8, line[argidx + 1 ..], " \t\n");
+        if (arg.len == 0) return error.ConfigValueMissing;
+        if (startsWith(u8, line, "file")) {
+            try parseConfigLineFile(log_files, null, arg);
+        } else if (startsWith(u8, line, "sshd")) {
+            try parseConfigLineFile(log_files, .sshd, arg);
+        } else if (startsWith(u8, line, "postfix")) {
+            try parseConfigLineFile(log_files, .postfix, arg);
+        } else if (startsWith(u8, line, "nginx")) {
+            try parseConfigLineFile(log_files, .nginx, arg);
+        } else if (startsWith(u8, line, "dovecot")) {
+            try parseConfigLineFile(log_files, .dovecot, arg);
+        } else if (startsWith(u8, line, "bantime")) {
+            if (indexOf(u8, line, "=")) |i| {
+                c.bantime = try bufPrint(&bantime_buf, " timeout {s}", .{std.mem.trim(u8, line[i + 1 ..], " \t\n")});
+            }
+        }
+    } else {
+        if (startsWith(u8, line, "syslog")) {
+            syslog.enabled = true; // TODO support false and disabled
         }
     }
+}
+
+fn parseConfigLineFile(log_files: *std.ArrayListUnmanaged(File), format: ?parser.Format, arg: []const u8) !void {
+    if (arg[0] != '/') return error.ConfigPathNotAbsolute;
+    if (indexOf(u8, arg, "*")) |i| {
+        const prefix = arg[0..i];
+        const postfix = arg[i + 1 ..];
+        if (postfix.len > 0 and postfix[0] == '*') return error.NotImplemented;
+        if (prefix[prefix.len - 1] != '/') return error.NotImplemented;
+        const stat = try std.fs.cwd().statFile(prefix);
+        if (stat.kind != .directory) return error.NotADir;
+        var dir = try std.fs.cwd().openDir(prefix, .{ .iterate = true });
+        defer dir.close();
+        var itr = dir.iterate();
+        while (try itr.next()) |subp| {
+            if (subp.kind != .file) continue;
+            if (!endsWith(u8, subp.name, postfix)) continue;
+            var path_buf: [2048]u8 = undefined;
+            const fname = try std.fmt.bufPrint(&path_buf, "{s}{s}", .{ prefix, subp.name });
+            log_files.appendAssumeCapacity(try .init(fname, true, format));
+        }
+    } else log_files.appendAssumeCapacity(try .init(arg, true, format));
 }
 
 test parseConfig {
     var td = std.testing.tmpDir(.{});
     defer td.cleanup();
-
-    //var files_td = std.testing.tmpDir(.{});
 
     const file_data =
         \\bantime = 4w
@@ -247,6 +268,30 @@ test parseConfig {
     try std.testing.expectEqual(@as(usize, 5), files.items.len);
     try std.testing.expectEqualStrings(" timeout 2w", c.bantime);
     try std.testing.expectEqual(true, syslog.enabled);
+}
+
+test "parseConfig multi" {
+    var td = std.testing.tmpDir(.{});
+    defer td.cleanup();
+
+    inline for (.{ "first", "second.log", "third.log", "forth.log" }) |fname| {
+        try td.dir.writeFile(.{ .sub_path = fname, .data = "" });
+    }
+
+    var abs_buffer: [2048]u8 = undefined;
+    const absp = try td.dir.realpath(".", &abs_buffer);
+    var config_buffer: [2048]u8 = undefined;
+    const config_data = try std.fmt.bufPrint(&config_buffer, "file = {s}/*.log\n", .{absp});
+    try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = config_data });
+
+    var a = std.testing.allocator;
+    const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
+    defer a.free(cfile);
+
+    var fbuf: [32]File = undefined;
+    var files: std.ArrayListUnmanaged(File) = .initBuffer(&fbuf);
+    try parseConfig(cfile, &files);
+    try std.testing.expectEqual(@as(usize, 3), files.items.len);
 }
 
 fn genLists(a: Allocator) ![3]std.ArrayListUnmanaged(u8) {
@@ -556,5 +601,6 @@ const indexOfScalar = std.mem.indexOfScalar;
 const indexOfScalarPos = std.mem.indexOfScalarPos;
 const parseInt = std.fmt.parseInt;
 const startsWith = std.mem.startsWith;
+const endsWith = std.mem.endsWith;
 const eql = std.mem.eql;
 const bufPrint = std.fmt.bufPrint;
