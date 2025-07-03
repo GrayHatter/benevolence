@@ -4,6 +4,7 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "NOQUEUE: lost connection after AUTH from", .heat = 1, .ban_time = default },
     .{ .hit = "improper command pipelining after CONNECT from ", .ban_time = 30 },
     .{ .hit = "ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4", .heat = 1 },
+    .{ .hit = "] ehlo=1 auth=0/1 commands=", .heat = 1 },
 };
 
 const default: u32 = 14 * 86400;
@@ -19,6 +20,10 @@ pub fn parseAddr(line: []const u8) !Addr {
     if (indexOf(u8, line, "]: SASL PLAIN") orelse indexOf(u8, line, "]: SASL LOGIN")) |j| {
         if (lastIndexOf(u8, line[0..j], "[")) |i| {
             return try Addr.parse(line[i + 1 .. j]);
+        }
+    } else if (indexOfPrefix(line, "disconnect from unknown[")) |i| {
+        if (indexOfScalarPos(u8, line, i, ']')) |j| {
+            return try Addr.parse(line[i..j]);
         }
     }
     return error.AddrNotFound;
@@ -40,6 +45,13 @@ pub fn parseLine(line: []const u8) !?Event {
         .timestamp = try parseTime(line),
         .extra = try parseExtra(line),
     };
+}
+
+fn indexOfPrefix(line: []const u8, search: []const u8) ?usize {
+    if (indexOf(u8, line, search)) |i| {
+        return i + search.len;
+    }
+    return null;
 }
 
 const std = @import("std");
