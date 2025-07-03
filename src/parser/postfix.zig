@@ -3,6 +3,7 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "SASL PLAIN authentication failed", .heat = 10, .ban_time = default },
     .{ .hit = "NOQUEUE: lost connection after AUTH from", .heat = 1, .ban_time = default },
     .{ .hit = "improper command pipelining after CONNECT from ", .ban_time = 30 },
+    .{ .hit = "ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4", .heat = 1 },
 };
 
 const default: u32 = 14 * 86400;
