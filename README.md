@@ -11,3 +11,16 @@ Opinions
 * firewall configuration isn't benevolence's job
 
 
+### Example config
+
+```ini
+[files]
+# normal file, benevolence will run all rules against it
+file = /var/log/messages
+
+# wildcard for specific ruleset
+nginx = /var/log/nginx/*.log
+
+# default bantime, specific rules may specify a different amount of time
+bantime = 14d
+```
