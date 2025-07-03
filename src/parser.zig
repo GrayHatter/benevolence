@@ -1,11 +1,11 @@
-pub const Group = enum {
+pub const Format = enum {
     dovecot,
     nginx,
     postfix,
     sshd,
 
-    pub const len = @typeInfo(Group).@"enum".fields.len;
-    pub const fields: [len]Group = .{
+    pub const len = @typeInfo(Format).@"enum".fields.len;
+    pub const fields: [len]Format = .{
         .dovecot,
         .nginx,
         .postfix,
@@ -13,7 +13,7 @@ pub const Group = enum {
     };
 };
 
-pub const Filters: std.EnumArray(Group, *const fn ([]const u8) bool) = .init(.{
+pub const Filters: std.EnumArray(Format, *const fn ([]const u8) bool) = .init(.{
     .dovecot = dovecot.filter,
     .nginx = nginx.filter,
     .postfix = postfix.filter,

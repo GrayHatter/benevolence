@@ -85,13 +85,8 @@ pub fn main() !void {
                     std.debug.print("error: --watch requires a filename\n", .{});
                     usage(arg0);
                 };
-                log_files.appendAssumeCapacity(try .init(filename, true));
+                log_files.appendAssumeCapacity(try .init(filename, true, null));
             } else if (eql(u8, arg, "--watch-all")) {
-                const filename = args.next() orelse {
-                    std.debug.print("error: --watch-all requires a filename\n", .{});
-                    usage(arg0);
-                };
-                log_files.appendAssumeCapacity(try .init(filename, true));
                 c.default_watch = true;
             } else {
                 usage(arg0);
@@ -104,7 +99,7 @@ pub fn main() !void {
                 };
             }
         } else {
-            log_files.appendAssumeCapacity(try .init(arg, c.default_watch));
+            log_files.appendAssumeCapacity(try .init(arg, c.default_watch, null));
         }
     }
 
@@ -180,8 +175,9 @@ fn parseConfig(
     var fbs = std.io.FixedBufferStream([]const u8){ .buffer = config, .pos = 0 };
     var reader = fbs.reader();
     var line_buf: [2048]u8 = undefined;
-    const line = try reader.readUntilDelimiterOrEof(&line_buf, '\n') orelse return;
-    try parseConfigLine(line, log_files);
+    while (try reader.readUntilDelimiterOrEof(&line_buf, '\n')) |line| {
+        try parseConfigLine(line, log_files);
+    }
 }
 
 fn parseConfigLine(full: []const u8, log_files: *std.ArrayListUnmanaged(File)) !void {
@@ -195,15 +191,15 @@ fn parseConfigLine(full: []const u8, log_files: *std.ArrayListUnmanaged(File)) !
         null;
 
     if (startsWith(u8, line, "file")) {
-        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true));
+        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true, null));
     } else if (startsWith(u8, line, "sshd")) {
-        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true));
+        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true, .sshd));
     } else if (startsWith(u8, line, "postfix")) {
-        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true));
+        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true, .postfix));
     } else if (startsWith(u8, line, "nginx")) {
-        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true));
+        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true, .nginx));
     } else if (startsWith(u8, line, "dovecot")) {
-        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true));
+        if (arg) |a| log_files.appendAssumeCapacity(try .init(a, true, .dovecot));
     } else if (startsWith(u8, line, "syslog")) {
         syslog.enabled = true; // TODO support false and disabled
     } else if (startsWith(u8, line, "bantime")) {
@@ -211,6 +207,46 @@ fn parseConfigLine(full: []const u8, log_files: *std.ArrayListUnmanaged(File)) !
             c.bantime = try bufPrint(&bantime_buf, " timeout {s}", .{std.mem.trim(u8, line[i + 1 ..], " \t\n")});
         }
     }
+}
+
+test parseConfig {
+    var td = std.testing.tmpDir(.{});
+    defer td.cleanup();
+
+    //var files_td = std.testing.tmpDir(.{});
+
+    const file_data =
+        \\bantime = 4w
+        \\file = /dev/null
+        \\
+        \\[files]
+        \\sshd = /dev/null
+        \\postfix = /dev/null
+        \\nginx = /dev/null
+        \\dovecot = /dev/null
+        \\syslog = enabled
+        \\syslog = /dev/null
+        \\#file = /dev/null
+        \\
+        \\bantime = 2w
+        \\
+        \\
+        \\
+    ;
+
+    try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
+
+    var a = std.testing.allocator;
+    const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
+    defer a.free(cfile);
+
+    var fbuf: [32]File = undefined;
+    var files: std.ArrayListUnmanaged(File) = .initBuffer(&fbuf);
+
+    try parseConfig(cfile, &files);
+    try std.testing.expectEqual(@as(usize, 5), files.items.len);
+    try std.testing.expectEqualStrings(" timeout 2w", c.bantime);
+    try std.testing.expectEqual(true, syslog.enabled);
 }
 
 fn genLists(a: Allocator) ![3]std.ArrayListUnmanaged(u8) {
@@ -326,7 +362,7 @@ fn readFile(a: Allocator, logfile: *File) !usize {
                 gop.value_ptr.time = .zero;
             }
             gop.value_ptr.banned = false;
-            switch (m.group) {
+            switch (m.format) {
                 .dovecot => {
                     gop.value_ptr.heat.mail +|= m.rule.heat;
                     gop.value_ptr.time.mail = @max(m.rule.ban_time orelse 0, gop.value_ptr.time.mail);
@@ -383,28 +419,28 @@ var baddies: std.StringArrayHashMapUnmanaged(BanData) = .{};
 var ban_list_updated: bool = false;
 var goodies: std.StringHashMapUnmanaged(void) = .{};
 
-const Groups = std.EnumArray(parser.Group, []const Detection);
+const Formats = std.EnumArray(parser.Format, []const Detection);
 
 const Meaningful = struct {
-    group: parser.Group,
+    format: parser.Format,
     rule: Detection,
     line: []const u8,
 };
 
 fn meaningful(line: []const u8) ?Meaningful {
-    const rules: Groups = comptime .init(.{
+    const rules: Formats = comptime .init(.{
         .dovecot = parser.dovecot.rules,
         .nginx = parser.nginx.rules,
         .postfix = parser.postfix.rules,
         .sshd = parser.sshd.rules,
     });
 
-    inline for (parser.Group.fields) |fld| {
+    inline for (parser.Format.fields) |fld| {
         if (parser.Filters.get(fld)(line)) {
             inline for (comptime rules.get(fld)) |rule| {
                 if (indexOf(u8, line, rule.hit)) |_| {
                     return .{
-                        .group = fld,
+                        .format = fld,
                         .rule = rule,
                         .line = line,
                     };
@@ -426,7 +462,7 @@ const Timestamp = packed struct(i64) {
 };
 
 fn parseLine(mean: Meaningful) !?Event {
-    return switch (mean.group) {
+    return switch (mean.format) {
         .dovecot => parser.dovecot.parseLine(mean.line),
         .nginx => parser.nginx.parseLine(mean.line),
         .postfix => parser.postfix.parseLine(mean.line),
@@ -438,42 +474,42 @@ test parseLine {
     const log_lines: []const Meaningful = &[_]Meaningful{
         .{
             .rule = .{ .hit = "" },
-            .group = .postfix,
+            .format = .postfix,
             .line =
             \\May 30 22:00:35 gr mail.warn postfix/smtps/smtpd[27561]: warning: unknown[117.217.120.52]: SASL PLAIN authentication failed: (reason unavailable), sasl_username=gwe@gr.ht
             ,
         },
         .{
             .rule = .{ .hit = "" },
-            .group = .postfix,
+            .format = .postfix,
             .line =
             \\May 30 22:00:35 gr mail.info postfix/smtps/smtpd[27561]: warning: unknown[117.217.120.52]: SASL PLAIN authentication failed: (reason unavailable), sasl_username=gwe@gr.ht
             ,
         },
         .{
             .rule = parser.postfix.rules[4],
-            .group = .postfix,
+            .format = .postfix,
             .line =
             \\Jul  3 00:46:09 gr mail.info postfix/smtp/smtpd[10108]: disconnect from unknown[77.90.185.6] ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4
             ,
         },
         .{
             .rule = .{ .hit = "" },
-            .group = .nginx,
+            .format = .nginx,
             .line =
             \\149.255.62.135 - - [29/May/2025:23:43:02 +0000] "GET /.env HTTP/1.1" 200 47 "-" "Cpanel-HTTP-Client/1.0"
             ,
         },
         .{
             .rule = .{ .hit = "" },
-            .group = .sshd,
+            .format = .sshd,
             .line =
             \\May 29 15:21:53 gr auth.info sshd-session[25292]: Connection closed by invalid user root 20.64.105.146 port 34292 [preauth]"
             ,
         },
         .{
             .rule = .{ .hit = "" },
-            .group = .dovecot,
+            .format = .dovecot,
             .line =
             \\Jun 12 19:24:38 imap-login: Info: Login aborted: Connection closed (auth failed, 3 attempts in 15 secs) (auth_failed): user=<eft>, method=PLAIN, rip=80.51.181.144, lip=127.4.20.69, TLS, session=<25Nw4GQ3Ms9QM7WQ>
             ,

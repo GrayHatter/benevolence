@@ -4,12 +4,13 @@ src: union(enum) {
     fbs: std.io.FixedBufferStream([]const u8),
 },
 watch: bool,
+only: ?parser.Format,
 meta: std.fs.File.Metadata,
 line_buffer: [4096]u8 = undefined,
 
 const LogFile = @This();
 
-pub fn init(filename: []const u8, watch: bool) !LogFile {
+pub fn init(filename: []const u8, watch: bool, only: ?parser.Format) !LogFile {
     const f = try std.fs.cwd().openFile(filename, .{});
     const lf: LogFile = .{
         .file = f,
@@ -20,6 +21,7 @@ pub fn init(filename: []const u8, watch: bool) !LogFile {
             },
         },
         .watch = watch,
+        .only = only,
         .meta = try f.metadata(),
     };
 
@@ -34,6 +36,7 @@ pub fn initStdin() !LogFile {
             .stdin = {},
         },
         .watch = true,
+        .only = null,
         .meta = try in.metadata(),
     };
 }
@@ -50,6 +53,7 @@ pub fn raze(lf: *LogFile) void {
 fn mmap(f: std.fs.File) ![]const u8 {
     const PROT = std.posix.PROT;
     const length = try f.getEndPos();
+    if (length == 0) return &[0]u8{};
     const offset = 0;
     return std.posix.mmap(null, length, PROT.READ, .{ .TYPE = .SHARED }, f.handle, offset);
 }
@@ -91,4 +95,5 @@ pub fn line(lf: *LogFile) !?[]const u8 {
     }
 }
 
+const parser = @import("parser.zig");
 const std = @import("std");
