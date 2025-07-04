@@ -26,8 +26,6 @@ fn usage(arg0: []const u8) noreturn {
     std.posix.exit(1);
 }
 
-var file_buf: [64]File = undefined;
-
 const Config = struct {
     default_watch: bool = false,
     quiet: bool = false,
@@ -36,10 +34,20 @@ const Config = struct {
     dryrun: bool = false,
     exec_rules: bool = false,
     pid_file: ?[]const u8 = "/run/benevolence.pid",
+
+    bantime_buffer: [64]u8 = @splat(' '),
+
+    pub fn validateBantime(cfg: *Config, bantime_w: []const u8) !void {
+        const bantime = std.mem.trim(u8, bantime_w, " \t");
+        for (bantime) |chr| switch (chr) {
+            '0'...'9', 'd', 'h', 'm', 's' => {},
+            else => return error.InvalidBanTimeString,
+        };
+        cfg.bantime = try bufPrint(&cfg.bantime_buffer, " timeout {s}", .{bantime});
+    }
 };
 
 var c: Config = .{};
-var bantime_buf: [32]u8 = @splat(' ');
 
 pub fn main() !void {
     const stdout_file = std.io.getStdOut().writer();
@@ -53,11 +61,12 @@ pub fn main() !void {
     var args = std.process.args();
     const arg0 = args.next() orelse usage("wat?!");
 
-    // TODO 20 ought to be enough for anyone
-    var log_files: std.ArrayListUnmanaged(File) = .initBuffer(&file_buf);
+    // This is a bug
+    const args_file_limit = 20;
+    var log_files: std.ArrayListUnmanaged(File) = try .initCapacity(a, args_file_limit);
 
     while (args.next()) |arg| {
-        if (log_files.items.len >= file_buf.len) {
+        if (log_files.items.len >= args_file_limit) {
             std.debug.print("PANIC: too many log files given\n", .{});
             usage(arg0);
         }
@@ -81,11 +90,8 @@ pub fn main() !void {
             } else if (eql(u8, arg, "--syslog")) {
                 syslog.enabled = true;
             } else if (eql(u8, arg, "--ban-time")) {
-                c.bantime = bufPrint(
-                    &bantime_buf,
-                    " timeout {s}",
-                    .{args.next() orelse usage(arg0)},
-                ) catch usage(arg0);
+                const bantime = args.next() orelse usage(arg0);
+                c.validateBantime(bantime) catch usage(arg0);
             } else if (eql(u8, arg, "--watch")) {
                 const filename = args.next() orelse {
                     std.debug.print("error: --watch requires a filename\n", .{});
@@ -222,7 +228,7 @@ fn parseConfigLine(full: []const u8, log_files: *std.ArrayListUnmanaged(File)) !
             try parseConfigLineFile(log_files, .dovecot, arg);
         } else if (startsWith(u8, line, "bantime")) {
             if (indexOf(u8, line, "=")) |i| {
-                c.bantime = try bufPrint(&bantime_buf, " timeout {s}", .{std.mem.trim(u8, line[i + 1 ..], " \t\n")});
+                try c.validateBantime(std.mem.trim(u8, line[i + 1 ..], " \t\n"));
             }
         }
     }
