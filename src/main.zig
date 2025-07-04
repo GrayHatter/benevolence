@@ -166,6 +166,7 @@ fn parseConfig(
     log_files: *std.ArrayListUnmanaged(File),
 ) !void {
     const fd = try std.fs.cwd().openFile(fname, .{});
+    if (try fd.getEndPos() == 0) return;
     const config = try std.posix.mmap(
         null,
         try fd.getEndPos(),
