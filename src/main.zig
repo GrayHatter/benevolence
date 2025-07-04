@@ -315,7 +315,7 @@ fn genLists(a: Allocator) ![3]std.ArrayListUnmanaged(u8) {
 
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
-        if (ts - 15 > kv.value_ptr.banned orelse ts) continue;
+        if (ts > kv.value_ptr.banned orelse ts) continue;
         if (kv.value_ptr.heat.http >= 2) {
             var w = banlist_http.writer(a);
             try w.print(", {s}{s}", .{ kv.key_ptr.*, c.bantime });
