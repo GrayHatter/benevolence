@@ -35,6 +35,7 @@ const Config = struct {
     config_arg: ?[]const u8 = null,
     dryrun: bool = false,
     exec_rules: bool = false,
+    pid_file: ?[]const u8 = "/run/benevolence.pid",
 };
 
 var c: Config = .{};
@@ -113,6 +114,20 @@ pub fn main() !void {
     }
 
     if (log_files.items.len == 0) usage(arg0);
+
+    if (c.config_arg) |_| {
+        if (c.pid_file) |pidfile| {
+            errdefer std.posix.exit(9);
+            const pid = try std.posix.fork();
+            if (pid > 0) {
+                var f = try std.fs.cwd().createFile(pidfile, .{});
+                var w = f.writer();
+                try w.print("{}\n", .{pid});
+                f.close();
+                std.posix.exit(0);
+            }
+        }
+    }
 
     for (log_files.items) |*file| {
         if (!file.watch) {
