@@ -17,6 +17,8 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "GET /aws/config.json HTTP" },
     .{ .hit = "GET /keys/config.json HTTP" },
     .{ .hit = "GET /s3/config.json HTTP" },
+    .{ .hit = "../../etc/passwd HTTP/1" },
+    .{ .hit = "GET /database.sql HTTP/" },
 };
 
 pub const rules_extra: []const Detection = &[_]Detection{
