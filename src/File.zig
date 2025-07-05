@@ -1,3 +1,4 @@
+path: []const u8,
 file: std.fs.File,
 src: union(enum) {
     stdin: void,
@@ -10,9 +11,10 @@ line_buffer: [4096]u8 = undefined,
 
 const LogFile = @This();
 
-pub fn init(filename: []const u8, watch: bool, only: ?parser.Format) !LogFile {
-    const f = try std.fs.cwd().openFile(filename, .{});
+pub fn init(path: []const u8, watch: bool, only: ?parser.Format) !LogFile {
+    const f = try std.fs.cwd().openFile(path, .{});
     const lf: LogFile = .{
+        .path = path,
         .file = f,
         .src = .{
             .fbs = .{
@@ -31,6 +33,7 @@ pub fn init(filename: []const u8, watch: bool, only: ?parser.Format) !LogFile {
 pub fn initStdin() !LogFile {
     const in = std.io.getStdIn();
     return .{
+        .path = "/dev/stdin",
         .file = in,
         .src = .{
             .stdin = {},
