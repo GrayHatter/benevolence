@@ -12,6 +12,11 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "GET /.aws/credentials HTTP" },
     .{ .hit = "GET /.vscode/sftp.json HTTP/" },
     .{ .hit = "GET /info.php HTTP/1.1\" 40" },
+    .{ .hit = "GET /config/default.json HTTP" },
+    .{ .hit = "GET /app/config.json HTTP" },
+    .{ .hit = "GET /aws/config.json HTTP" },
+    .{ .hit = "GET /keys/config.json HTTP" },
+    .{ .hit = "GET /s3/config.json HTTP" },
 };
 
 pub const rules_extra: []const Detection = &[_]Detection{
