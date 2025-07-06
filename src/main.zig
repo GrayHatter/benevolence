@@ -65,7 +65,7 @@ pub fn main() !void {
 
     // This is a bug
     const args_file_limit = 20;
-    var log_files: std.ArrayListUnmanaged(File) = try .initCapacity(a, args_file_limit);
+    var log_files: FileArray = try .initCapacity(a, args_file_limit);
 
     while (args.next()) |arg| {
         if (log_files.items.len >= args_file_limit) {
@@ -139,11 +139,7 @@ pub fn main() !void {
     try core(a, log_files, stdout);
 }
 
-fn core(
-    a: Allocator,
-    log_files: std.ArrayListUnmanaged(File),
-    stdout: anytype,
-) !void {
+fn core(a: Allocator, log_files: FileArray, stdout: anytype) !void {
     for (log_files.items) |*file| {
         if (file.mode == .watch or file.mode == .follow) {
             var timer: std.time.Timer = try .start();
@@ -155,8 +151,8 @@ fn core(
 
     if (c.exec_rules) {
         try execBanList(a);
-    } else {
-        if (!c.quiet) try printBanList(a, stdout.any());
+    } else if (!c.quiet) {
+        try printBanList(a, stdout.any());
     }
 
     var files_remaining: usize = 0;
@@ -168,10 +164,7 @@ fn core(
 
     while (files_remaining > 0) {
         for (log_files.items) |*lf| {
-            switch (lf.mode) {
-                .once, .closed => continue,
-                .watch, .follow => {},
-            }
+            if (lf.mode == .closed) continue;
             _ = drainFile(a, lf) catch |err| {
                 std.debug.print("err {}\n", .{err});
                 lf.raze();
@@ -183,8 +176,8 @@ fn core(
         if (ban_list_updated) {
             if (c.exec_rules) {
                 try execBanList(a);
-            } else {
-                if (!c.quiet) try printBanList(a, stdout.any());
+            } else if (!c.quiet) {
+                try printBanList(a, stdout.any());
             }
             ban_list_updated = false;
         }
@@ -194,7 +187,7 @@ fn core(
 
 fn parseConfig(
     fname: []const u8,
-    log_files: *std.ArrayListUnmanaged(File),
+    log_files: *FileArray,
 ) !void {
     const fd = try std.fs.cwd().openFile(fname, .{});
     if (try fd.getEndPos() == 0) return;
@@ -218,7 +211,7 @@ fn parseConfig(
     }
 }
 
-fn parseConfigLine(full: []const u8, log_files: *std.ArrayListUnmanaged(File)) !void {
+fn parseConfigLine(full: []const u8, log_files: *FileArray) !void {
     const line = std.mem.trim(u8, full, " \t\n");
     if (line.len < 4) return;
     if (line[0] == '#') return;
@@ -248,7 +241,7 @@ fn parseConfigLine(full: []const u8, log_files: *std.ArrayListUnmanaged(File)) !
     }
 }
 
-fn parseConfigLineFile(log_files: *std.ArrayListUnmanaged(File), format: ?parser.Format, arg: []const u8) !void {
+fn parseConfigLineFile(log_files: *FileArray, format: ?parser.Format, arg: []const u8) !void {
     if (arg[0] != '/') return error.ConfigPathNotAbsolute;
     if (indexOf(u8, arg, "*")) |i| {
         const prefix = arg[0..i];
@@ -300,7 +293,7 @@ test parseConfig {
     defer a.free(cfile);
 
     var fbuf: [32]File = undefined;
-    var files: std.ArrayListUnmanaged(File) = .initBuffer(&fbuf);
+    var files: FileArray = .initBuffer(&fbuf);
 
     try parseConfig(cfile, &files);
     try std.testing.expectEqual(@as(usize, 5), files.items.len);
@@ -327,7 +320,7 @@ test "parseConfig multi" {
     defer a.free(cfile);
 
     var fbuf: [32]File = undefined;
-    var files: std.ArrayListUnmanaged(File) = .initBuffer(&fbuf);
+    var files: FileArray = .initBuffer(&fbuf);
     try parseConfig(cfile, &files);
     try std.testing.expectEqual(@as(usize, 3), files.items.len);
 }
@@ -644,6 +637,7 @@ pub const Addr = net.Addr;
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const FileArray = std.ArrayListUnmanaged(File);
 const indexOf = std.mem.indexOf;
 const indexOfAny = std.mem.indexOfAny;
 const indexOfScalar = std.mem.indexOfScalar;
