@@ -43,7 +43,12 @@ const Config = struct {
             '0'...'9', 'd', 'h', 'm', 's' => {},
             else => return error.InvalidBanTimeString,
         };
-        cfg.bantime = try bufPrint(&cfg.bantime_buffer, " timeout {s}", .{bantime});
+        if (bantime.len > 0) {
+            cfg.bantime = try bufPrint(&cfg.bantime_buffer, " timeout {s}", .{bantime});
+        } else {
+            // I've been burned by 0len pointer assignments
+            cfg.bantime = try bufPrint(&cfg.bantime_buffer, "", .{});
+        }
     }
 };
 
