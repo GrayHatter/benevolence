@@ -142,7 +142,7 @@ fn core(
     for (log_files.items) |*file| {
         if (file.mode == .watch or file.mode == .follow) {
             var timer: std.time.Timer = try .start();
-            const line_count = try readFile(a, file);
+            const line_count = try drainFile(a, file);
             const lap = timer.lap();
             std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
         }
@@ -167,7 +167,7 @@ fn core(
                 .once, .closed => continue,
                 .watch, .follow => {},
             }
-            _ = readFile(a, lf) catch |err| {
+            _ = drainFile(a, lf) catch |err| {
                 std.debug.print("err {}\n", .{err});
                 lf.raze();
                 files_remaining -|= 1;
@@ -422,7 +422,7 @@ fn printBanList(a: Allocator, stdout: std.io.AnyWriter) !void {
     }
 }
 
-fn readFile(a: Allocator, logfile: *File) !usize {
+fn drainFile(a: Allocator, logfile: *File) !usize {
     var line_count: usize = 0;
 
     while (try logfile.line()) |line| {
