@@ -146,7 +146,7 @@ fn core(a: Allocator, log_files: *FileArray, stdout: anytype) !void {
         var timer: std.time.Timer = try .start();
         const line_count = try drainFile(a, file);
         const lap = timer.lap();
-        if (c.config_arg != null) std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
+        if (c.config_arg == null) std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
     }
 
     if (c.exec_rules) {
@@ -565,8 +565,18 @@ fn meaningful(line: []const u8) ?Meaningful {
     inline for (parser.Format.fields) |fld| {
         if (parser.Filters.get(fld)(line)) {
             inline for (comptime rules.get(fld)) |rule| {
-                if (indexOf(u8, line, rule.hit)) |_| {
-                    return .{
+                if (indexOf(u8, line, rule.hit)) |i| {
+                    if (rule.tree) |tree| {
+                        inline for (tree) |branch| {
+                            if (indexOf(u8, line[i..], branch.hit)) |_| {
+                                return .{
+                                    .format = fld,
+                                    .rule = rule,
+                                    .line = line,
+                                };
+                            }
+                        }
+                    } else return .{
                         .format = fld,
                         .rule = rule,
                         .line = line,
