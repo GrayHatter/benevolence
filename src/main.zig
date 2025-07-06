@@ -140,10 +140,10 @@ pub fn main() !void {
         }
     }
 
-    try core(a, log_files, stdout);
+    try core(a, &log_files, stdout);
 }
 
-fn core(a: Allocator, log_files: FileArray, stdout: anytype) !void {
+fn core(a: Allocator, log_files: *FileArray, stdout: anytype) !void {
     for (log_files.items) |*file| {
         var timer: std.time.Timer = try .start();
         const line_count = try drainFile(a, file);
@@ -157,46 +157,43 @@ fn core(a: Allocator, log_files: FileArray, stdout: anytype) !void {
         try printBanList(a, stdout.any());
     }
 
-    var files_remaining: usize = 0;
-    for (log_files.items) |*lf| {
-        if (lf.mode == .once) {
+    for (0..log_files.items.len) |i| {
+        while (i > log_files.items.len and log_files.items[i].mode == .once) {
+            var lf = log_files.swapRemove(i);
             lf.raze();
-        } else files_remaining += 1;
+        }
     }
 
-    while (files_remaining > 0) {
-        for (log_files.items) |*lf| {
-            if (lf.mode == .closed) continue;
-            _ = drainFile(a, lf) catch |err| {
-                std.debug.print("err {}\n", .{err});
-                lf.raze();
-                files_remaining -|= 1;
-                continue;
-            };
-        }
+    for (log_files.items) |*lf| {
+        if (lf.mode == .closed) continue;
+        _ = drainFile(a, lf) catch |err| {
+            std.debug.print("err {}\n", .{err});
+            lf.raze();
+            continue;
+        };
+    }
 
-        if (ban_list_updated) {
-            if (c.exec_rules) {
-                try execBanList(a);
-            } else if (!c.quiet) {
-                try printBanList(a, stdout.any());
-            }
-            ban_list_updated = false;
+    if (ban_list_updated) {
+        if (c.exec_rules) {
+            try execBanList(a);
+        } else if (!c.quiet) {
+            try printBanList(a, stdout.any());
         }
+        ban_list_updated = false;
+    }
 
-        if (signaled()) |sig| {
-            std.debug.print("signaled {}\n", .{sig});
-            switch (sig) {
-                SIG.HUP => {
-                    try syslog.log(.{ .signal = .{ .sig = @intCast(sig), .str = "SIGHUP" } });
-                    for (log_files.items) |*lf| {
-                        try lf.reInit();
-                    }
-                },
-                SIG.QUIT => {},
-                SIG.USR1, SIG.USR2 => {},
-                else => @panic("unreachable"),
-            }
+    if (signaled()) |sig| {
+        std.debug.print("signaled {}\n", .{sig});
+        switch (sig) {
+            SIG.HUP => {
+                try syslog.log(.{ .signal = .{ .sig = @intCast(sig), .str = "SIGHUP" } });
+                for (log_files.items) |*lf| {
+                    try lf.reInit();
+                }
+            },
+            SIG.QUIT => {},
+            SIG.USR1, SIG.USR2 => {},
+            else => @panic("unreachable"),
         }
     }
 }
