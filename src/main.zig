@@ -270,7 +270,7 @@ test parseConfig {
     defer td.cleanup();
 
     const file_data =
-        \\bantime = 4w
+        \\bantime = 30d
         \\file = /dev/null
         \\
         \\[files]
@@ -282,7 +282,7 @@ test parseConfig {
         \\syslog = /dev/null
         \\#file = /dev/null
         \\
-        \\bantime = 2w
+        \\bantime = 14d
         \\
         \\
         \\
@@ -299,7 +299,7 @@ test parseConfig {
 
     try parseConfig(cfile, &files);
     try std.testing.expectEqual(@as(usize, 5), files.items.len);
-    try std.testing.expectEqualStrings(" timeout 2w", c.bantime);
+    try std.testing.expectEqualStrings(" timeout 14d", c.bantime);
     try std.testing.expectEqual(true, syslog.enabled);
 }
 
