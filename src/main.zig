@@ -27,7 +27,7 @@ fn usage(arg0: []const u8) noreturn {
 }
 
 const Config = struct {
-    default_watch: bool = false,
+    default_watch: File.Mode = .once,
     quiet: bool = false,
     bantime: []const u8 = "",
     config_arg: ?[]const u8 = null,
@@ -50,10 +50,7 @@ const Config = struct {
 var c: Config = .{};
 
 pub fn main() !void {
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    defer bw.flush() catch @panic("final flush failed");
-    const stdout = bw.writer();
+    const stdout = std.io.getStdOut().writer();
 
     var debug_a: std.heap.DebugAllocator(.{}) = .{};
     const a = debug_a.allocator();
@@ -97,9 +94,9 @@ pub fn main() !void {
                     std.debug.print("error: --watch requires a filename\n", .{});
                     usage(arg0);
                 };
-                log_files.appendAssumeCapacity(try .init(filename, true, null));
+                log_files.appendAssumeCapacity(try .init(filename, .follow, null));
             } else if (eql(u8, arg, "--watch-all")) {
-                c.default_watch = true;
+                c.default_watch = .follow;
             } else {
                 usage(arg0);
             }
@@ -134,9 +131,16 @@ pub fn main() !void {
             }
         }
     }
+    try core(a, log_files, stdout);
+}
 
+fn core(
+    a: Allocator,
+    log_files: std.ArrayListUnmanaged(File),
+    stdout: anytype,
+) !void {
     for (log_files.items) |*file| {
-        if (!file.watch) {
+        if (file.mode == .watch or file.mode == .follow) {
             var timer: std.time.Timer = try .start();
             const line_count = try readFile(a, file);
             const lap = timer.lap();
@@ -148,19 +152,21 @@ pub fn main() !void {
         try execBanList(a);
     } else {
         if (!c.quiet) try printBanList(a, stdout.any());
-        try bw.flush();
     }
 
     var files_remaining: usize = 0;
     for (log_files.items) |*lf| {
-        if (!lf.watch) {
+        if (lf.mode == .once) {
             lf.raze();
         } else files_remaining += 1;
     }
 
     while (files_remaining > 0) {
         for (log_files.items) |*lf| {
-            if (!lf.watch) continue;
+            switch (lf.mode) {
+                .once, .closed => continue,
+                .watch, .follow => {},
+            }
             _ = readFile(a, lf) catch |err| {
                 std.debug.print("err {}\n", .{err});
                 lf.raze();
@@ -174,7 +180,6 @@ pub fn main() !void {
                 try execBanList(a);
             } else {
                 if (!c.quiet) try printBanList(a, stdout.any());
-                try bw.flush();
             }
             ban_list_updated = false;
         }
@@ -255,9 +260,9 @@ fn parseConfigLineFile(log_files: *std.ArrayListUnmanaged(File), format: ?parser
             if (!endsWith(u8, subp.name, postfix)) continue;
             var path_buf: [2048]u8 = undefined;
             const fname = try std.fmt.bufPrint(&path_buf, "{s}{s}", .{ prefix, subp.name });
-            log_files.appendAssumeCapacity(try .init(fname, true, format));
+            log_files.appendAssumeCapacity(try .init(fname, .follow, format));
         }
-    } else log_files.appendAssumeCapacity(try .init(arg, true, format));
+    } else log_files.appendAssumeCapacity(try .init(arg, .follow, format));
 }
 
 test parseConfig {

@@ -4,14 +4,25 @@ src: union(enum) {
     stdin: void,
     fbs: std.io.FixedBufferStream([]const u8),
 },
-watch: bool,
+mode: Mode,
 only: ?parser.Format,
 meta: std.fs.File.Metadata,
 line_buffer: [4096]u8 = undefined,
 
 const LogFile = @This();
 
-pub fn init(path: []const u8, watch: bool, only: ?parser.Format) !LogFile {
+pub const Mode = enum {
+    /// file is unable to be read
+    closed,
+    /// process the whole file exactly once
+    once,
+    /// process new lines, do not reopen fd
+    watch,
+    /// process new lines, try to reopen fd on error
+    follow,
+};
+
+pub fn init(path: []const u8, watch: Mode, only: ?parser.Format) !LogFile {
     const f = try std.fs.cwd().openFile(path, .{});
     const lf: LogFile = .{
         .path = path,
@@ -22,7 +33,7 @@ pub fn init(path: []const u8, watch: bool, only: ?parser.Format) !LogFile {
                 .pos = 0,
             },
         },
-        .watch = watch,
+        .mode = watch,
         .only = only,
         .meta = try f.metadata(),
     };
@@ -38,19 +49,19 @@ pub fn initStdin() !LogFile {
         .src = .{
             .stdin = {},
         },
-        .watch = true,
+        .mode = .watch,
         .only = null,
         .meta = try in.metadata(),
     };
 }
 
 pub fn raze(lf: *LogFile) void {
-    lf.watch = false;
     lf.file.close();
     switch (lf.src) {
         .fbs => |fbs| std.posix.munmap(@alignCast(fbs.buffer)),
         else => {},
     }
+    lf.mode = .closed;
 }
 
 fn mmap(f: std.fs.File) ![]const u8 {
