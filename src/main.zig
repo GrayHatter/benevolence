@@ -263,12 +263,12 @@ fn parseConfig(
 }
 
 fn parseConfigLine(full: []const u8, log_files: *FileArray) !void {
-    const line = std.mem.trim(u8, full, " \t\n");
+    const line = std.mem.trim(u8, full, " \t\n\r");
     if (line.len < 4) return;
     if (line[0] == '#') return;
 
     if (indexOf(u8, line, "=")) |argidx| {
-        const arg: []const u8 = std.mem.trim(u8, line[argidx + 1 ..], " \t\n");
+        const arg: []const u8 = std.mem.trim(u8, line[argidx + 1 ..], " \t\n\r");
         if (arg.len == 0) return error.ConfigValueMissing;
         if (startsWith(u8, line, "file")) {
             try parseConfigLineFile(log_files, null, arg);
@@ -282,7 +282,7 @@ fn parseConfigLine(full: []const u8, log_files: *FileArray) !void {
             try parseConfigLineFile(log_files, .dovecot, arg);
         } else if (startsWith(u8, line, "bantime")) {
             if (indexOf(u8, line, "=")) |i| {
-                try c.validateBantime(std.mem.trim(u8, line[i + 1 ..], " \t\n"));
+                try c.validateBantime(std.mem.trim(u8, line[i + 1 ..], " \t\n\r"));
             }
         }
     }
