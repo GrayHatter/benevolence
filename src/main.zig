@@ -123,8 +123,6 @@ pub fn main() !void {
 
     if (log_files.items.len == 0) usage(arg0);
 
-    _ = try stdout.print("pid {}\n", .{std.os.linux.getpid()});
-
     if (c.config_arg) |_| {
         if (c.pid_file) |pidfile| {
             errdefer std.posix.exit(9);
@@ -148,7 +146,7 @@ fn core(a: Allocator, log_files: *FileArray, stdout: anytype) !void {
         var timer: std.time.Timer = try .start();
         const line_count = try drainFile(a, file);
         const lap = timer.lap();
-        std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
+        if (c.config_arg != null) std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
     }
 
     if (c.exec_rules) {
