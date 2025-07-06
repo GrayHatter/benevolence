@@ -3,6 +3,7 @@ pub var enabled: bool = false;
 const Event = union(enum) {
     banned: Banned,
     startup: Startup,
+    signal: Signal,
 
     pub const Banned = struct {
         surface: []const u8,
@@ -13,6 +14,11 @@ const Event = union(enum) {
     pub const Startup = struct {
         filename: []const u8,
         count: usize,
+    };
+
+    pub const Signal = struct {
+        sig: u6,
+        str: []const u8 = "",
     };
 };
 
@@ -109,6 +115,10 @@ pub fn log(evt: Event) !void {
                 "<{}>{s}[{}]: startup: processed {} lines from {s}",
                 .{ pri, tag, pid, su.count, su.filename },
             );
+        },
+        .signal => |sig| {
+            const pri: Priority = .init(.auth, .warning);
+            try w.print("<{}>{s}[{}]: signal: {s}[{}]", .{ pri, tag, pid, sig.str, sig.sig });
         },
     }
     _ = try std.posix.write(s, buffer.items);

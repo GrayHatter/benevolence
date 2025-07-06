@@ -123,6 +123,8 @@ pub fn main() !void {
 
     if (log_files.items.len == 0) usage(arg0);
 
+    _ = try stdout.print("pid {}\n", .{std.os.linux.getpid()});
+
     if (c.config_arg) |_| {
         if (c.pid_file) |pidfile| {
             errdefer std.posix.exit(9);
@@ -134,19 +136,19 @@ pub fn main() !void {
                 f.close();
                 std.posix.exit(0);
             }
+            _ = std.posix.sigprocmask(std.os.linux.SIG.BLOCK, &sigset, null);
         }
     }
+
     try core(a, log_files, stdout);
 }
 
 fn core(a: Allocator, log_files: FileArray, stdout: anytype) !void {
     for (log_files.items) |*file| {
-        if (file.mode == .watch or file.mode == .follow) {
-            var timer: std.time.Timer = try .start();
-            const line_count = try drainFile(a, file);
-            const lap = timer.lap();
-            std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
-        }
+        var timer: std.time.Timer = try .start();
+        const line_count = try drainFile(a, file);
+        const lap = timer.lap();
+        std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
     }
 
     if (c.exec_rules) {
@@ -181,8 +183,60 @@ fn core(a: Allocator, log_files: FileArray, stdout: anytype) !void {
             }
             ban_list_updated = false;
         }
-        sleep(500);
+
+        if (signaled()) |sig| {
+            std.debug.print("signaled {}\n", .{sig});
+            switch (sig) {
+                SIG.HUP => {
+                    try syslog.log(.{ .signal = .{ .sig = @intCast(sig), .str = "SIGHUP" } });
+                    for (log_files.items) |*lf| {
+                        try lf.reInit();
+                    }
+                },
+                SIG.QUIT => {},
+                SIG.USR1, SIG.USR2 => {},
+                else => @panic("unreachable"),
+            }
+        }
     }
+}
+
+fn defaultSigSetMask() sigset_t {
+    var set: sigset_t = @splat(0);
+    std.os.linux.sigaddset(&set, SIG.HUP);
+    std.os.linux.sigaddset(&set, SIG.QUIT);
+    std.os.linux.sigaddset(&set, SIG.USR1);
+    std.os.linux.sigaddset(&set, SIG.USR2);
+    return set;
+}
+
+const sigset: sigset_t = defaultSigSetMask();
+
+const NSIG = std.os.linux.NSIG;
+const SIG = std.os.linux.SIG;
+const sigset_t = std.os.linux.sigset_t;
+const siginfo = std.os.linux.siginfo_t;
+const timespec = std.os.linux.timespec;
+pub fn sigtimedwait(set: *const sigset_t, info: *siginfo, timeout: *const timespec) isize {
+    //const sigsetsize: usize = @sizeOf(sigset_t);
+    return @bitCast(std.os.linux.syscall4(
+        .rt_sigtimedwait,
+        @intFromPtr(set),
+        @intFromPtr(info),
+        @intFromPtr(timeout),
+        NSIG / 8,
+    ));
+}
+
+fn signaled() ?i32 {
+    var info: siginfo = .{ .signo = 0, .code = 0, .errno = 0, .fields = undefined };
+    //const set: sigset_t = @splat(~@as(u32, 0));
+    const timeout: timespec = .{ .sec = 0, .nsec = 250_000_000 };
+    const timed = sigtimedwait(&sigset, &info, &timeout);
+    if (-timed != @intFromEnum(std.os.linux.E.AGAIN)) {
+        return info.signo;
+    }
+    return null;
 }
 
 fn parseConfig(

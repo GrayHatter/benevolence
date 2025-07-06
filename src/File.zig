@@ -55,6 +55,20 @@ pub fn initStdin() !LogFile {
     };
 }
 
+pub fn reInit(lf: *LogFile) !void {
+    if (lf.src == .stdin) return error.CantReopenStdin;
+    if (lf.mode != .closed) lf.raze();
+    const f = try std.fs.cwd().openFile(lf.path, .{});
+    lf.file = f;
+    lf.src = .{
+        .fbs = .{
+            .buffer = try mmap(f),
+            .pos = 0,
+        },
+    };
+    lf.mode = .follow;
+}
+
 pub fn raze(lf: *LogFile) void {
     lf.file.close();
     switch (lf.src) {
