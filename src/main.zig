@@ -108,7 +108,7 @@ pub fn main() !void {
                 f.close();
                 std.posix.exit(0);
             }
-            _ = std.posix.sigprocmask(std.os.linux.SIG.BLOCK, &sigset, null);
+            signals.setDefaultMask();
         }
     }
 
@@ -155,59 +155,20 @@ fn core(a: Allocator, log_files: *FileArray, stdout: anytype) !void {
             ban_list_updated = false;
         }
 
-        if (signaled()) |sig| {
-            std.debug.print("signaled {}\n", .{sig});
+        if (signals.check()) |sig| {
+            std.debug.print("signaled {s}\n", .{@tagName(sig)});
             switch (sig) {
-                SIG.HUP => {
-                    try syslog.log(.{ .signal = .{ .sig = @intCast(sig), .str = "SIGHUP" } });
+                .hup => {
+                    try syslog.log(.{ .signal = .{ .sig = @intFromEnum(sig), .str = "SIGHUP" } });
                     for (log_files.items) |*lf| {
                         try lf.reInit();
                     }
                 },
-                SIG.QUIT => {},
-                SIG.USR1, SIG.USR2 => {},
-                else => @panic("unreachable"),
+                .quit => {},
+                .usr1, .usr2 => {},
             }
         }
     }
-}
-
-fn defaultSigSetMask() sigset_t {
-    var set: sigset_t = @splat(0);
-    std.os.linux.sigaddset(&set, SIG.HUP);
-    std.os.linux.sigaddset(&set, SIG.QUIT);
-    std.os.linux.sigaddset(&set, SIG.USR1);
-    std.os.linux.sigaddset(&set, SIG.USR2);
-    return set;
-}
-
-const sigset: sigset_t = defaultSigSetMask();
-
-const NSIG = std.os.linux.NSIG;
-const SIG = std.os.linux.SIG;
-const sigset_t = std.os.linux.sigset_t;
-const siginfo = std.os.linux.siginfo_t;
-const timespec = std.os.linux.timespec;
-pub fn sigtimedwait(set: *const sigset_t, info: *siginfo, timeout: *const timespec) isize {
-    //const sigsetsize: usize = @sizeOf(sigset_t);
-    return @bitCast(std.os.linux.syscall4(
-        .rt_sigtimedwait,
-        @intFromPtr(set),
-        @intFromPtr(info),
-        @intFromPtr(timeout),
-        NSIG / 8,
-    ));
-}
-
-fn signaled() ?i32 {
-    var info: siginfo = .{ .signo = 0, .code = 0, .errno = 0, .fields = undefined };
-    //const set: sigset_t = @splat(~@as(u32, 0));
-    const timeout: timespec = .{ .sec = 0, .nsec = 250_000_000 };
-    const timed = sigtimedwait(&sigset, &info, &timeout);
-    if (-timed != @intFromEnum(std.os.linux.E.AGAIN)) {
-        return info.signo;
-    }
-    return null;
 }
 
 fn genLists(a: Allocator) ![3]std.ArrayListUnmanaged(u8) {
@@ -524,6 +485,9 @@ test {
     _ = &Config;
 }
 
+pub const Addr = net.Addr;
+
+const signals = @import("signals.zig");
 const Config = @import("Config.zig");
 const example_config = @import("example-config.zig");
 const syslog = @import("syslog.zig");
@@ -533,7 +497,6 @@ const Detection = @import("Detection.zig");
 //const Actionable = @import("Actionable.zig");
 const File = @import("File.zig");
 const net = @import("net.zig");
-pub const Addr = net.Addr;
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
