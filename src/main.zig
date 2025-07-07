@@ -162,36 +162,38 @@ fn core(a: Allocator, log_files: *FileArray, stdout: anytype) !void {
         }
     }
 
-    for (log_files.items) |*lf| {
-        if (lf.mode == .closed) continue;
-        _ = drainFile(a, lf) catch |err| {
-            std.debug.print("err {}\n", .{err});
-            lf.raze();
-            continue;
-        };
-    }
-
-    if (ban_list_updated) {
-        if (c.exec_rules) {
-            try execBanList(a);
-        } else if (!c.quiet) {
-            try printBanList(a, stdout.any());
+    while (log_files.items.len > 0) {
+        for (log_files.items) |*lf| {
+            if (lf.mode == .closed) continue;
+            _ = drainFile(a, lf) catch |err| {
+                std.debug.print("err {}\n", .{err});
+                lf.raze();
+                continue;
+            };
         }
-        ban_list_updated = false;
-    }
 
-    if (signaled()) |sig| {
-        std.debug.print("signaled {}\n", .{sig});
-        switch (sig) {
-            SIG.HUP => {
-                try syslog.log(.{ .signal = .{ .sig = @intCast(sig), .str = "SIGHUP" } });
-                for (log_files.items) |*lf| {
-                    try lf.reInit();
-                }
-            },
-            SIG.QUIT => {},
-            SIG.USR1, SIG.USR2 => {},
-            else => @panic("unreachable"),
+        if (ban_list_updated) {
+            if (c.exec_rules) {
+                try execBanList(a);
+            } else if (!c.quiet) {
+                try printBanList(a, stdout.any());
+            }
+            ban_list_updated = false;
+        }
+
+        if (signaled()) |sig| {
+            std.debug.print("signaled {}\n", .{sig});
+            switch (sig) {
+                SIG.HUP => {
+                    try syslog.log(.{ .signal = .{ .sig = @intCast(sig), .str = "SIGHUP" } });
+                    for (log_files.items) |*lf| {
+                        try lf.reInit();
+                    }
+                },
+                SIG.QUIT => {},
+                SIG.USR1, SIG.USR2 => {},
+                else => @panic("unreachable"),
+            }
         }
     }
 }
