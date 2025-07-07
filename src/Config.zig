@@ -1,10 +1,11 @@
 default_watch: File.Mode = .once,
+damonize: ?bool = null,
 quiet: bool = false,
 bantime: []const u8 = "",
 config_arg: ?[]const u8 = null,
 dryrun: bool = false,
 exec_rules: bool = false,
-pid_file: ?[]const u8 = "/run/benevolence.pid",
+pid_file: ?[]const u8 = null,
 
 bantime_buffer: [64]u8 = @splat(' '),
 
@@ -38,6 +39,7 @@ pub fn parse(c: *Config, fname: []const u8, files: *FileArray) !void {
     fd.close();
     syslog.enabled = true;
     if (!c.dryrun) c.exec_rules = true;
+    if (c.damonize == null) c.damonize = true;
 
     var fbs = std.io.FixedBufferStream([]const u8){ .buffer = config, .pos = 0 };
     var reader = fbs.reader();

@@ -8,7 +8,8 @@ fn usage(arg0: []const u8) noreturn {
         \\Options:
         \\
         \\    -c                <filename>      Config file
-        \\    -d                                Daemonize [fork to background | not implemented]
+        \\    -d                                Daemonize [fork to background]
+        \\    -f                                Stay in foreground
         \\
         \\    --example                         Print an example nft config then exit
         \\    --exec                            Install banned elements into nft
@@ -85,6 +86,10 @@ pub fn main() !void {
                     std.debug.print("error: -c requires a filename\n", .{});
                     usage(arg0);
                 };
+            } else if (eql(u8, arg, "-f")) {
+                c.damonize = false;
+            } else if (eql(u8, arg, "-d")) {
+                c.damonize = true;
             }
         } else {
             log_files.appendAssumeCapacity(try .init(arg, c.default_watch, null));
@@ -97,19 +102,18 @@ pub fn main() !void {
 
     if (log_files.items.len == 0) usage(arg0);
 
-    if (c.config_arg) |_| {
-        if (c.pid_file) |pidfile| {
-            errdefer std.posix.exit(9);
-            const pid = try std.posix.fork();
-            if (pid > 0) {
-                var f = try std.fs.cwd().createFile(pidfile, .{});
-                var w = f.writer();
-                try w.print("{}\n", .{pid});
-                f.close();
-                std.posix.exit(0);
-            }
-            signals.setDefaultMask();
+    if (c.damonize) |_| {
+        const pid_file = c.pid_file orelse "/run/benevolence.pid";
+        errdefer std.posix.exit(9);
+        const pid = try std.posix.fork();
+        if (pid > 0) {
+            var f = try std.fs.cwd().createFile(pid_file, .{});
+            var w = f.writer();
+            try w.print("{}\n", .{pid});
+            f.close();
+            std.posix.exit(0);
         }
+        signals.setDefaultMask();
     }
 
     try core(a, &log_files, stdout);
@@ -120,7 +124,7 @@ fn core(a: Allocator, log_files: *FileArray, stdout: anytype) !void {
         var timer: std.time.Timer = try .start();
         const line_count = try drainFile(a, file);
         const lap = timer.lap();
-        if (c.config_arg == null) std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
+        if (c.damonize orelse true) std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
     }
 
     if (c.exec_rules) {
@@ -155,7 +159,7 @@ fn core(a: Allocator, log_files: *FileArray, stdout: anytype) !void {
             ban_list_updated = false;
         }
 
-        if (signals.check()) |sig| {
+        if (signals.check(200)) |sig| {
             std.debug.print("signaled {s}\n", .{@tagName(sig)});
             switch (sig) {
                 .hup => {

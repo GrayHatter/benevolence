@@ -20,10 +20,10 @@ pub fn setDefaultMask() void {
     _ = std.posix.sigprocmask(std.os.linux.SIG.BLOCK, &sigset, null);
 }
 
-pub fn check() ?Signal {
+pub fn check(msec: isize) ?Signal {
     var info: siginfo = .{ .signo = 0, .code = 0, .errno = 0, .fields = undefined };
     //const set: sigset_t = @splat(~@as(u32, 0));
-    const timeout: timespec = .{ .sec = 0, .nsec = 250_000_000 };
+    const timeout: timespec = .{ .sec = 0, .nsec = 1_000_000 * msec };
     const timed = sigtimedwait(&sigset, &info, &timeout);
     if (-timed != @intFromEnum(std.os.linux.E.AGAIN)) {
         return switch (info.signo) {
