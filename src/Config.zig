@@ -26,7 +26,13 @@ pub fn validateBantime(cfg: *Config, bantime_w: []const u8) !void {
 }
 
 pub fn parse(c: *Config, fname: []const u8, files: *FileArray) !void {
-    const fd = try std.fs.cwd().openFile(fname, .{});
+    const fd = std.fs.cwd().openFile(fname, .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            std.debug.print("Error config file missing {s}\n", .{fname});
+            std.posix.exit(1);
+        },
+        else => return err,
+    };
     if (try fd.getEndPos() == 0) return;
     const config = try std.posix.mmap(
         null,
