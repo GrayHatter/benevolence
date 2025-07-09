@@ -25,7 +25,7 @@ pub fn validateBantime(cfg: *Config, bantime_w: []const u8) !void {
     }
 }
 
-pub fn parse(c: *Config, fname: []const u8, files: *FileArray) !void {
+pub fn parse(c: *Config, a: Allocator, fname: []const u8, files: *FileArray) !void {
     const fd = std.fs.cwd().openFile(fname, .{}) catch |err| switch (err) {
         error.FileNotFound => {
             std.debug.print("Error config file missing {s}\n", .{fname});
@@ -51,11 +51,11 @@ pub fn parse(c: *Config, fname: []const u8, files: *FileArray) !void {
     var reader = fbs.reader();
     var line_buf: [2048]u8 = undefined;
     while (try reader.readUntilDelimiterOrEof(&line_buf, '\n')) |line| {
-        try c.parseLine(line, files);
+        try c.parseLine(a, line, files);
     }
 }
 
-fn parseLine(c: *Config, full: []const u8, files: *FileArray) !void {
+fn parseLine(c: *Config, a: Allocator, full: []const u8, files: *FileArray) !void {
     const line = std.mem.trim(u8, full, " \t\n\r");
     if (line.len < 4) return;
     if (line[0] == '#') return;
@@ -64,15 +64,15 @@ fn parseLine(c: *Config, full: []const u8, files: *FileArray) !void {
         const arg: []const u8 = std.mem.trim(u8, line[argidx + 1 ..], " \t\n\r");
         if (arg.len == 0) return error.ConfigValueMissing;
         if (startsWith(u8, line, "file")) {
-            try parseLineFile(files, null, arg);
+            try parseLineFile(a, files, null, arg);
         } else if (startsWith(u8, line, "sshd")) {
-            try parseLineFile(files, .sshd, arg);
+            try parseLineFile(a, files, .sshd, arg);
         } else if (startsWith(u8, line, "postfix")) {
-            try parseLineFile(files, .postfix, arg);
+            try parseLineFile(a, files, .postfix, arg);
         } else if (startsWith(u8, line, "nginx")) {
-            try parseLineFile(files, .nginx, arg);
+            try parseLineFile(a, files, .nginx, arg);
         } else if (startsWith(u8, line, "dovecot")) {
-            try parseLineFile(files, .dovecot, arg);
+            try parseLineFile(a, files, .dovecot, arg);
         } else if (startsWith(u8, line, "bantime")) {
             if (indexOf(u8, line, "=")) |i| {
                 try c.validateBantime(std.mem.trim(u8, line[i + 1 ..], " \t\n\r"));
@@ -85,7 +85,7 @@ fn parseLine(c: *Config, full: []const u8, files: *FileArray) !void {
     }
 }
 
-fn parseLineFile(log_files: *FileArray, format: ?parser.Format, arg: []const u8) !void {
+fn parseLineFile(a: Allocator, log_files: *FileArray, format: ?parser.Format, arg: []const u8) !void {
     if (arg[0] != '/') return error.ConfigPathNotAbsolute;
     if (indexOf(u8, arg, "*")) |i| {
         const prefix = arg[0..i];
@@ -100,11 +100,10 @@ fn parseLineFile(log_files: *FileArray, format: ?parser.Format, arg: []const u8)
         while (try itr.next()) |subp| {
             if (subp.kind != .file) continue;
             if (!endsWith(u8, subp.name, postfix)) continue;
-            var path_buf: [2048]u8 = undefined;
-            const fname = try std.fmt.bufPrint(&path_buf, "{s}{s}", .{ prefix, subp.name });
+            const fname = try std.fmt.allocPrint(a, "{s}{s}", .{ prefix, subp.name });
             log_files.appendAssumeCapacity(try .init(fname, .follow, format));
         }
-    } else log_files.appendAssumeCapacity(try .init(arg, .follow, format));
+    } else log_files.appendAssumeCapacity(try .init(try a.dupe(u8, arg), .follow, format));
 }
 
 test parse {
@@ -173,6 +172,7 @@ test "parse multi" {
 
 const parser = @import("parser.zig");
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const syslog = @import("syslog.zig");
 const bufPrint = std.fmt.bufPrint;
 const File = @import("File.zig");

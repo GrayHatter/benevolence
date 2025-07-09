@@ -58,7 +58,13 @@ pub fn initStdin() !LogFile {
 pub fn reInit(lf: *LogFile) !void {
     if (lf.src == .stdin) return error.CantReopenStdin;
     if (lf.mode != .closed) lf.raze();
-    const f = try std.fs.cwd().openFile(lf.path, .{});
+    const f = std.fs.cwd().openFile(lf.path, .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            std.debug.print("Unable to reinit for {s} file not found.\n", .{lf.path});
+            return;
+        },
+        else => return err,
+    };
     lf.file = f;
     lf.src = .{
         .fbs = .{

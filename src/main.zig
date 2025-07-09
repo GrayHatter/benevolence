@@ -32,7 +32,7 @@ var c: Config = .{};
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
 
-    var debug_a: std.heap.DebugAllocator(.{}) = .{};
+    var debug_a: std.heap.GeneralPurposeAllocator(.{ .safety = true }) = .{};
     const a = debug_a.allocator();
 
     var args = std.process.args();
@@ -97,12 +97,12 @@ pub fn main() !void {
     }
 
     if (c.config_arg) |ca| {
-        try c.parse(ca, &log_files);
+        try c.parse(a, ca, &log_files);
     }
 
     if (log_files.items.len == 0) usage(arg0);
 
-    if (c.damonize) |_| {
+    if (c.damonize != null and c.damonize.?) {
         const pid_file = c.pid_file orelse "/run/benevolence.pid";
         errdefer std.posix.exit(9);
         const pid = try std.posix.fork();
@@ -113,8 +113,8 @@ pub fn main() !void {
             f.close();
             std.posix.exit(0);
         }
-        signals.setDefaultMask();
     }
+    signals.setDefaultMask();
 
     try core(a, &log_files, stdout);
 }
@@ -272,7 +272,6 @@ fn printBanList(a: Allocator, stdout: std.io.AnyWriter) !void {
 
 fn drainFile(a: Allocator, logfile: *File) !usize {
     var line_count: usize = 0;
-
     while (try logfile.line()) |line| {
         line_count += 1;
         if (meaningful(line)) |m| {
