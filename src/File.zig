@@ -60,28 +60,28 @@ pub fn reInit(lf: *LogFile) !void {
     if (lf.mode != .closed) lf.raze();
     const f = std.fs.cwd().openFile(lf.path, .{}) catch |err| switch (err) {
         error.FileNotFound => {
-            std.debug.print("Unable to reinit for {s} file not found.\n", .{lf.path});
+            log.err("Unable to reinit for {s} file not found.", .{lf.path});
             return;
         },
         else => return err,
     };
-    lf.file = f;
-    lf.src = .{
-        .fbs = .{
-            .buffer = try mmap(f),
-            .pos = 0,
-        },
+    lf.* = .{
+        .path = lf.path,
+        .only = lf.only,
+        .file = lf.file,
+        .meta = try lf.file.metadata(),
+        .src = .{ .fbs = .{ .buffer = try mmap(f), .pos = 0 } },
+        .mode = .follow,
     };
-    lf.mode = .follow;
 }
 
-pub fn raze(lf: *LogFile) void {
+pub fn raze(lf: LogFile) void {
     lf.file.close();
     switch (lf.src) {
         .fbs => |fbs| std.posix.munmap(@alignCast(fbs.buffer)),
         else => {},
     }
-    lf.mode = .closed;
+    //lf.mode = .closed;
 }
 
 fn mmap(f: std.fs.File) ![]const u8 {
@@ -131,3 +131,4 @@ pub fn line(lf: *LogFile) !?[]const u8 {
 
 const parser = @import("parser.zig");
 const std = @import("std");
+const log = std.log.scoped(.file);

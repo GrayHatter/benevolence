@@ -119,12 +119,13 @@ pub fn main() !void {
     try core(a, &log_files, stdout);
 }
 
-fn core(a: Allocator, log_files: *FileArray, stdout: anytype) !void {
-    for (log_files.items) |*file| {
+fn core(a: Allocator, src_files: *FileArray, stdout: anytype) !void {
+    for (src_files.items) |*file| {
         var timer: std.time.Timer = try .start();
         const line_count = try drainFile(a, file);
         const lap = timer.lap();
-        if (c.damonize orelse true) std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
+        if (c.damonize orelse true)
+            std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
     }
 
     if (c.exec_rules) {
@@ -133,21 +134,31 @@ fn core(a: Allocator, log_files: *FileArray, stdout: anytype) !void {
         try printBanList(a, stdout.any());
     }
 
-    for (0..log_files.items.len) |i| {
-        while (i > log_files.items.len and log_files.items[i].mode == .once) {
-            var lf = log_files.swapRemove(i);
-            lf.raze();
+    var watch_list: FileArray = try .initCapacity(a, src_files.items.len);
+
+    while (src_files.pop()) |file| {
+        switch (file.mode) {
+            .once, .closed => {
+                file.raze();
+            },
+            .watch, .follow => {
+                watch_list.appendAssumeCapacity(file);
+            },
         }
     }
 
-    while (log_files.items.len > 0) {
-        for (log_files.items) |*lf| {
-            if (lf.mode == .closed) continue;
-            _ = drainFile(a, lf) catch |err| {
-                std.debug.print("err {}\n", .{err});
-                lf.raze();
-                continue;
-            };
+    while (watch_list.items.len > 0) {
+        for (watch_list.items) |*lf| {
+            switch (lf.mode) {
+                .closed => continue,
+                .once => @panic("unreachable"),
+                .watch, .follow => {
+                    _ = drainFile(a, lf) catch |err| {
+                        std.debug.print("err {}\n", .{err});
+                        lf.raze();
+                    };
+                },
+            }
         }
 
         if (ban_list_updated) {
@@ -164,8 +175,14 @@ fn core(a: Allocator, log_files: *FileArray, stdout: anytype) !void {
             switch (sig) {
                 .hup => {
                     try syslog.log(.{ .signal = .{ .sig = @intFromEnum(sig), .str = "SIGHUP" } });
-                    for (log_files.items) |*lf| {
-                        try lf.reInit();
+                    for (watch_list.items) |*lf| {
+                        lf.reInit() catch |err| {
+                            try syslog.log(.{ .err = .{
+                                .err = @errorName(err),
+                                .str = "Unable to restart on file",
+                                .file = lf.path,
+                            } });
+                        };
                     }
                 },
                 .quit => {},

@@ -4,6 +4,7 @@ const Event = union(enum) {
     banned: Banned,
     startup: Startup,
     signal: Signal,
+    err: Error,
 
     pub const Banned = struct {
         surface: []const u8,
@@ -19,6 +20,12 @@ const Event = union(enum) {
     pub const Signal = struct {
         sig: u6,
         str: []const u8 = "",
+    };
+
+    pub const Error = struct {
+        err: []const u8,
+        str: []const u8,
+        file: []const u8,
     };
 };
 
@@ -119,6 +126,10 @@ pub fn log(evt: Event) !void {
         .signal => |sig| {
             const pri: Priority = .init(.auth, .warning);
             try w.print("<{}>{s}[{}]: signal: {s}[{}]", .{ pri, tag, pid, sig.str, sig.sig });
+        },
+        .err => |err| {
+            const pri: Priority = .init(.auth, .err);
+            try w.print("<{}>{s}[{}]: Error: ({s}) {s} '{s}", .{ pri, tag, pid, err.err, err.str, err.file });
         },
     }
     _ = try std.posix.write(s, buffer.items);
