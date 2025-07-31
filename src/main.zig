@@ -291,7 +291,7 @@ fn drainFile(a: Allocator, logfile: *File) !usize {
     var line_count: usize = 0;
     while (try logfile.line()) |line| {
         line_count += 1;
-        if (meaningful(line)) |m| {
+        if (findHit(line)) |m| {
             const event = try parseLine(m) orelse continue;
 
             var b: [0xff]u8 = undefined;
@@ -371,7 +371,7 @@ const Meaningful = struct {
     line: []const u8,
 };
 
-fn meaningful(line: []const u8) ?Meaningful {
+fn findHit(line: []const u8) ?Meaningful {
     const rules: Formats = comptime .init(.{
         .dovecot = parser.dovecot.rules,
         .nginx = parser.nginx.rules,
@@ -497,10 +497,10 @@ test parseLine {
     };
 
     for (log_lines, log_hits) |line, hit| {
-        try std.testing.expectEqualStrings(line.line, meaningful(line.line).?.line);
+        try std.testing.expectEqualStrings(line.line, findHit(line.line).?.line);
         try std.testing.expectEqualDeep(hit, parseLine(line));
-        try std.testing.expectEqualDeep(line.rule, meaningful(line.line).?.rule);
-        try std.testing.expectEqualDeep(line.rule.heat, meaningful(line.line).?.rule.heat);
+        try std.testing.expectEqualDeep(line.rule, findHit(line.line).?.rule);
+        try std.testing.expectEqualDeep(line.rule.heat, findHit(line.line).?.rule.heat);
     }
 }
 
