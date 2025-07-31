@@ -429,59 +429,60 @@ test parseLine {
         .{
             .rule = parser.postfix.rules[1],
             .format = .postfix,
-            .line =
-            \\May 30 22:00:35 gr mail.warn postfix/smtps/smtpd[27561]: warning: unknown[117.217.120.52]: SASL PLAIN authentication failed: (reason unavailable), sasl_username=gwe@gr.ht
-            ,
+            .line = "May 30 22:00:35 gr mail.warn postfix/smtps/smtpd[27561]: warning: unknown[117.217.120.52]" ++
+                ": SASL PLAIN authentication failed: (reason unavailable), sasl_username=gwe@gr.ht",
         },
         .{
             .rule = parser.postfix.rules[1],
             .format = .postfix,
-            .line =
-            \\May 30 22:00:35 gr mail.info postfix/smtps/smtpd[27561]: warning: unknown[117.217.120.52]: SASL PLAIN authentication failed: (reason unavailable), sasl_username=gwe@gr.ht
-            ,
+            .line = "May 30 22:00:35 gr mail.info postfix/smtps/smtpd[27561]: warning: " ++
+                "unknown[117.217.120.52]: SASL PLAIN authentication failed: (reason unavailable)," ++
+                "sasl_username=gwe@gr.ht",
         },
         .{
             .rule = parser.postfix.rules[4],
             .format = .postfix,
-            .line =
-            \\Jul  3 00:46:09 gr mail.info postfix/smtp/smtpd[10108]: disconnect from unknown[77.90.185.6] ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4
-            ,
+            .line = "Jul  3 00:46:09 gr mail.info postfix/smtp/smtpd[10108]: disconnect from " ++
+                "unknown[77.90.185.6] ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4",
         },
         .{
             .rule = parser.nginx.rules[0],
             .format = .nginx,
-            .line =
-            \\149.255.62.135 - - [29/May/2025:23:43:02 +0000] "GET /.env HTTP/1.1" 200 47 "-" "Cpanel-HTTP-Client/1.0"
-            ,
+            .line = "149.255.62.135 - - [29/May/2025:23:43:02 +0000] \"GET /.env HTTP/1.1\" 200 " ++
+                "47 \"-\" \"Cpanel-HTTP-Client/1.0\"",
         },
         .{
             .rule = parser.nginx.rules[3].prefix.?[0],
             .format = .nginx,
-            .line =
-            \\185.177.72.104 - - [03/Jul/2025:21:06:55 +0000] "GET /.git/config HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" "-"
-            ,
+            .line = "185.177.72.104 - - [03/Jul/2025:21:06:55 +0000] \"GET /.git/config HTTP/1.1\" " ++
+                "404 181 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML," ++
+                "like Gecko) Chrome/91.0.4472.124 Safari/537.36\" \"-\"",
         },
-
         .{
             .rule = parser.sshd.rules[0],
             .format = .sshd,
-            .line =
-            \\May 29 15:21:53 gr auth.info sshd-session[25292]: Connection closed by invalid user root 20.64.105.146 port 34292 [preauth]"
-            ,
+            .line = "May 29 15:21:53 gr auth.info sshd-session[25292]: Connection closed by " ++
+                "invalid user root 20.64.105.146 port 34292 [preauth]",
         },
         .{
             .rule = parser.dovecot.rules[0],
             .format = .dovecot,
-            .line =
-            \\Jun 12 19:24:38 imap-login: Info: Login aborted: Connection closed (auth failed, 3 attempts in 15 secs) (auth_failed): user=<eft>, method=PLAIN, rip=80.51.181.144, lip=127.4.20.69, TLS, session=<25Nw4GQ3Ms9QM7WQ>
-            ,
+            .line = "Jun 12 19:24:38 imap-login: Info: Login aborted: Connection closed " ++
+                "(auth failed, 3 attempts in 15 secs) (auth_failed): user=<eft>, method=PLAIN, rip=80.51.181.144, " ++
+                "lip=127.4.20.69, TLS, session=<25Nw4GQ3Ms9QM7WQ>",
         },
         .{
             .rule = parser.postfix.rules[7].prefix.?[0],
             .format = .postfix,
-            .line =
-            \\Jul 31 17:13:38 gr mail.info postfix/smtp/smtpd[9566]: NOQUEUE: reject: RCPT from unknown[162.218.52.165]: 450 4.7.1 Client host rejected: cannot find your reverse hostname, [162.218.52.165]; from=<bounce@jantool.org> to=<banned_email@gr.ht> proto=ESMTP helo=<mail1.jantool.org>
-            ,
+            .line = "Jul 31 17:13:38 gr mail.info postfix/smtp/smtpd[9566]: NOQUEUE: reject: RCPT from " ++
+                "unknown[162.218.52.165]: 450 4.7.1 Client host rejected: cannot find your reverse hostname," ++
+                " [162.218.52.165]; from=<bounce@jantool.org> to=<banned_email@gr.ht> proto=ESMTP helo=<mail1.jantool.org>",
+        },
+        .{
+            .rule = parser.sshd.trusted_rules[0],
+            .format = .sshd,
+            .line = "Jul 31 20:13:59 gr auth.info sshd-session[10237]: Accepted publickey for grayhatter" ++
+                " from 127.42.0.69 port 53142 ssh2: ED25519 SHA256:ezIQDYy8JvgUcKabQeIrT1UK/xmtDdK04UrkckY+VAQ",
         },
     };
 
