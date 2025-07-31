@@ -8,7 +8,7 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "NOQUEUE: lost connection after CONNECT from unknown", .heat = 2, .ban_time = 3600 },
 
     .{ .hit = "Client host rejected: cannot find your reverse hostname", .prefix = &.{
-        .{ .hit = " to=<bannable_email_here@gr.ht>", .heat = 16, .ban_time = 3600 * 2 },
+        .{ .hit = " to=<banned_email@gr.ht>", .heat = 16, .ban_time = 3600 * 2 },
     }, .heat = 0, .ban_time = 0 },
 };
 

@@ -480,7 +480,7 @@ test parseLine {
             .rule = parser.postfix.rules[7].prefix.?[0],
             .format = .postfix,
             .line =
-            \\Jul 31 17:13:38 gr mail.info postfix/smtp/smtpd[9566]: NOQUEUE: reject: RCPT from unknown[162.218.52.165]: 450 4.7.1 Client host rejected: cannot find your reverse hostname, [162.218.52.165]; from=<bounce@jantool.org> to=<bannable_email_here@gr.ht> proto=ESMTP helo=<mail1.jantool.org>
+            \\Jul 31 17:13:38 gr mail.info postfix/smtp/smtpd[9566]: NOQUEUE: reject: RCPT from unknown[162.218.52.165]: 450 4.7.1 Client host rejected: cannot find your reverse hostname, [162.218.52.165]; from=<bounce@jantool.org> to=<banned_email@gr.ht> proto=ESMTP helo=<mail1.jantool.org>
             ,
         },
     };
