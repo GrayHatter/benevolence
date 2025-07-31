@@ -139,10 +139,11 @@ test parse {
     var files: FileArray = .initBuffer(&fbuf);
 
     var c: Config = .{};
-    try c.parse(cfile, &files);
+    try c.parse(std.testing.allocator, cfile, &files);
     try std.testing.expectEqual(@as(usize, 5), files.items.len);
     try std.testing.expectEqualStrings(" timeout 14d", c.bantime);
     try std.testing.expectEqual(true, syslog.enabled);
+    for (files.items) |f| std.testing.allocator.free(f.path);
 }
 
 test "parse multi" {
@@ -166,8 +167,9 @@ test "parse multi" {
     var fbuf: [32]File = undefined;
     var files: FileArray = .initBuffer(&fbuf);
     var c: Config = .{};
-    try c.parse(cfile, &files);
+    try c.parse(std.testing.allocator, cfile, &files);
     try std.testing.expectEqual(@as(usize, 3), files.items.len);
+    for (files.items) |f| std.testing.allocator.free(f.path);
 }
 
 const parser = @import("parser.zig");
