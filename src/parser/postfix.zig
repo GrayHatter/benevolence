@@ -12,6 +12,8 @@ pub const rules: []const Detection = &[_]Detection{
     }, .heat = 0, .ban_time = 0 },
 };
 
+pub const trusted_rules: []const Detection = &.{};
+
 const default: u32 = 14 * 86400;
 
 pub fn filter(line: []const u8) bool {
@@ -26,7 +28,7 @@ pub fn parseAddr(line: []const u8) !Addr {
         if (lastIndexOf(u8, line[0..j], "[")) |i| {
             return try Addr.parse(line[i + 1 .. j]);
         }
-    } else if (indexOfPrefix(line, " from unknown[")) |i| {
+    } else if (indexOfPrefix(line, 0, " from unknown[")) |i| {
         if (indexOfScalarPos(u8, line, i, ']')) |j| {
             return try Addr.parse(line[i..j]);
         }
@@ -52,18 +54,13 @@ pub fn parseLine(line: []const u8) !?Event {
     };
 }
 
-fn indexOfPrefix(line: []const u8, search: []const u8) ?usize {
-    if (indexOf(u8, line, search)) |i| {
-        return i + search.len;
-    }
-    return null;
-}
-
 const std = @import("std");
 const indexOf = std.mem.indexOf;
 const lastIndexOf = std.mem.lastIndexOf;
 const indexOfScalarPos = std.mem.indexOfScalarPos;
 const startsWith = std.mem.startsWith;
+const parser = @import("../parser.zig");
+const indexOfPrefix = parser.indexOfPrefix;
 const Addr = @import("../main.zig").Addr;
 const Event = @import("../Event.zig");
 const Detection = @import("../Detection.zig");

@@ -6,6 +6,7 @@ config_arg: ?[]const u8 = null,
 dryrun: bool = false,
 exec_rules: bool = false,
 pid_file: ?[]const u8 = null,
+enable_trusted: bool = false,
 
 bantime_buffer: [64]u8 = @splat(' '),
 
@@ -55,6 +56,13 @@ pub fn parse(c: *Config, a: Allocator, fname: []const u8, files: *FileArray) !vo
     }
 }
 
+fn truthy(arg: []const u8) bool {
+    for (&[_][]const u8{ "off", "disabled", "no", "false", "0" }) |str| {
+        if (std.mem.eql(u8, arg, str)) return false;
+    }
+    return true;
+}
+
 fn parseLine(c: *Config, a: Allocator, full: []const u8, files: *FileArray) !void {
     const line = std.mem.trim(u8, full, " \t\n\r");
     if (line.len < 4) return;
@@ -74,9 +82,9 @@ fn parseLine(c: *Config, a: Allocator, full: []const u8, files: *FileArray) !voi
         } else if (startsWith(u8, line, "dovecot")) {
             try parseLineFile(a, files, .dovecot, arg);
         } else if (startsWith(u8, line, "bantime")) {
-            if (indexOf(u8, line, "=")) |i| {
-                try c.validateBantime(std.mem.trim(u8, line[i + 1 ..], " \t\n\r"));
-            }
+            try c.validateBantime(arg);
+        } else if (startsWith(u8, line, "enable_trusted")) {
+            c.enable_trusted = truthy(arg);
         }
     }
 
@@ -144,6 +152,61 @@ test parse {
     try std.testing.expectEqualStrings(" timeout 14d", c.bantime);
     try std.testing.expectEqual(true, syslog.enabled);
     for (files.items) |f| std.testing.allocator.free(f.path);
+}
+
+test "config trusted" {
+    var td = std.testing.tmpDir(.{});
+    defer td.cleanup();
+    const file_data =
+        \\enable_trusted = enabled
+        \\
+    ;
+
+    try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
+
+    var a = std.testing.allocator;
+    const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
+    defer a.free(cfile);
+
+    var c: Config = .{};
+    try c.parse(std.testing.allocator, cfile, undefined);
+    try std.testing.expectEqual(true, c.enable_trusted);
+}
+
+test "config untrusted" {
+    var td = std.testing.tmpDir(.{});
+    defer td.cleanup();
+    const file_data =
+        \\enable_trusted = disabled
+        \\
+    ;
+
+    try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
+
+    var a = std.testing.allocator;
+    const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
+    defer a.free(cfile);
+    var c: Config = .{};
+    try c.parse(std.testing.allocator, cfile, undefined);
+    try std.testing.expectEqual(false, c.enable_trusted);
+}
+
+test "config default" {
+    var td = std.testing.tmpDir(.{});
+    defer td.cleanup();
+    const file_data =
+        \\enable_ = bleh
+        \\
+    ;
+
+    try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
+
+    var a = std.testing.allocator;
+    const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
+    defer a.free(cfile);
+    var c: Config = .{};
+    try c.parse(std.testing.allocator, cfile, undefined);
+    try std.testing.expectEqual(false, c.enable_trusted);
 }
 
 test "parse multi" {

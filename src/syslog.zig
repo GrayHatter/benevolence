@@ -2,6 +2,8 @@ pub var enabled: bool = false;
 
 const Event = union(enum) {
     banned: Banned,
+    trustedabuse: TrustedAbuse,
+    trusted: Trusted,
     startup: Startup,
     signal: Signal,
     err: Error,
@@ -10,6 +12,14 @@ const Event = union(enum) {
         surface: []const u8,
         count: usize,
         src: ?[]const u8 = null,
+    };
+
+    pub const Trusted = struct {
+        addr: []const u8,
+    };
+
+    pub const TrustedAbuse = struct {
+        addr: []const u8,
     };
 
     pub const Startup = struct {
@@ -105,31 +115,48 @@ pub fn log(evt: Event) !void {
     try std.posix.connect(s, @ptrCast(&addr), addr_len);
     defer std.posix.close(s);
 
+    const sp_str = "<{}>{s}[{}]: ";
+    const lp_str = "<{}>{s}/{s}[{}]: ";
+
     switch (evt) {
         .banned => |ban| {
             const pri: Priority = .init(.auth, .warning);
             try w.print(
-                "<{}>{s}/{s}[{}]: {} banned",
+                lp_str ++ "{} banned",
                 .{ pri, tag, ban.surface, pid, ban.count },
             );
             if (ban.src) |bansrc| {
                 if (bansrc.len < 256) try w.print(" address: [{s}]", .{bansrc});
             }
         },
+        .trusted => |tru| {
+            const pri: Priority = .init(.auth, .notice);
+            try w.print(
+                lp_str ++ "adding {s} to list of trusted address",
+                .{ pri, tag, "trusted", pid, tru.addr },
+            );
+        },
+        .trustedabuse => |tab| {
+            const pri: Priority = .init(.auth, .warning);
+            try w.print(
+                sp_str ++ "ignoring abuse from a 'known good' address {s}",
+                .{ pri, tag, pid, tab.addr },
+            );
+        },
         .startup => |su| {
             const pri: Priority = .init(.auth, .info);
             try w.print(
-                "<{}>{s}[{}]: startup: processed {} lines from {s}",
+                sp_str ++ "startup: processed {} lines from {s}",
                 .{ pri, tag, pid, su.count, su.filename },
             );
         },
         .signal => |sig| {
             const pri: Priority = .init(.auth, .warning);
-            try w.print("<{}>{s}[{}]: signal: {s}[{}]", .{ pri, tag, pid, sig.str, sig.sig });
+            try w.print(sp_str ++ "signal: {s}[{}]", .{ pri, tag, pid, sig.str, sig.sig });
         },
         .err => |err| {
             const pri: Priority = .init(.auth, .err);
-            try w.print("<{}>{s}[{}]: Error: ({s}) {s} '{s}", .{ pri, tag, pid, err.err, err.str, err.file });
+            try w.print(sp_str ++ "Error: ({s}) {s} '{s}", .{ pri, tag, pid, err.err, err.str, err.file });
         },
     }
     _ = try std.posix.write(s, buffer.items);

@@ -40,6 +40,8 @@ pub const rules_extra: []const Detection = &[_]Detection{
     .{ .hit = "GET /?rest_route=/wp/v2/users/ HTTP/" },
 };
 
+pub const trusted_rules: []const Detection = &.{};
+
 pub fn filter(line: []const u8) bool {
     var dots: usize = 0;
     var idx: usize = 0;

@@ -15,6 +15,7 @@ fn usage(arg0: []const u8) noreturn {
         \\    --exec                            Install banned elements into nft
         \\    --syslog                          Log ban events to syslog [logger]
         \\    --quiet                           Don't print rules
+        \\    --enable-trusted                  Enable auto trusted exemption list
         \\    --dry-run                         Don't execute rules
         \\
         \\    --                                Use stdin
@@ -64,6 +65,8 @@ pub fn main() !void {
                 c.exec_rules = false;
             } else if (eql(u8, arg, "--quiet")) {
                 c.quiet = true;
+            } else if (eql(u8, arg, "--enable-trusted")) {
+                c.enable_trusted = true;
             } else if (eql(u8, arg, "--syslog")) {
                 syslog.enabled = true;
             } else if (eql(u8, arg, "--ban-time")) {
@@ -192,11 +195,11 @@ fn core(a: Allocator, src_files: *FileArray, stdout: anytype) !void {
     }
 }
 
-fn genLists(a: Allocator) ![3]std.ArrayListUnmanaged(u8) {
+fn genLists(a: Allocator) ![3]ArrayList(u8) {
     const ts = std.time.timestamp();
-    var banlist_http: std.ArrayListUnmanaged(u8) = .{};
-    var banlist_mail: std.ArrayListUnmanaged(u8) = .{};
-    var banlist_sshd: std.ArrayListUnmanaged(u8) = .{};
+    var banlist_http: ArrayList(u8) = .{};
+    var banlist_mail: ArrayList(u8) = .{};
+    var banlist_sshd: ArrayList(u8) = .{};
 
     errdefer {
         banlist_http.deinit(a);
@@ -291,40 +294,58 @@ fn drainFile(a: Allocator, logfile: *File) !usize {
     var line_count: usize = 0;
     while (try logfile.line()) |line| {
         line_count += 1;
-        if (findHit(line)) |m| {
-            const event = try parseLine(m) orelse continue;
+        if (findHit(line)) |found| switch (found) {
+            .abuse => |abuse| {
+                const event = try parseLine(abuse) orelse continue;
 
-            var b: [0xff]u8 = undefined;
-            const paddr = try std.fmt.bufPrint(&b, "{}", .{event.src_addr});
+                var b: [0xff]u8 = undefined;
+                const paddr = try std.fmt.bufPrint(&b, "{}", .{event.src_addr});
+                if (trusted_addrs.contains(paddr)) {
+                    try syslog.log(.{ .trustedabuse = .{ .addr = paddr } });
+                    continue;
+                }
 
-            ban_list_updated = true;
-            const gop = try baddies.getOrPut(a, paddr);
-            if (!gop.found_existing) {
-                gop.key_ptr.* = try a.dupe(u8, paddr);
-                gop.value_ptr.* = .{};
-            }
-            if (gop.value_ptr.banned) |banned| {
-                if (banned < std.time.timestamp() - 3) gop.value_ptr.banned = null;
-            }
-            switch (m.format) {
-                .dovecot => {
-                    gop.value_ptr.heat.mail +|= m.rule.heat;
-                    gop.value_ptr.time.mail = @max(m.rule.ban_time orelse 0, gop.value_ptr.time.mail);
-                },
-                .nginx => {
-                    gop.value_ptr.heat.http +|= m.rule.heat;
-                    gop.value_ptr.time.http = @max(m.rule.ban_time orelse 0, gop.value_ptr.time.http);
-                },
-                .postfix => {
-                    gop.value_ptr.heat.mail +|= m.rule.heat;
-                    gop.value_ptr.time.mail = @max(m.rule.ban_time orelse 0, gop.value_ptr.time.mail);
-                },
-                .sshd => {
-                    gop.value_ptr.heat.sshd +|= m.rule.heat;
-                    gop.value_ptr.time.sshd = @max(m.rule.ban_time orelse 0, gop.value_ptr.time.sshd);
-                },
-            }
-        }
+                ban_list_updated = true;
+                const gop = try baddies.getOrPut(a, paddr);
+                if (!gop.found_existing) {
+                    gop.key_ptr.* = try a.dupe(u8, paddr);
+                    gop.value_ptr.* = .{};
+                }
+                if (gop.value_ptr.banned) |banned| {
+                    if (banned < std.time.timestamp() - 3) gop.value_ptr.banned = null;
+                }
+                switch (abuse.format) {
+                    .dovecot => {
+                        gop.value_ptr.heat.mail +|= abuse.rule.heat;
+                        gop.value_ptr.time.mail = @max(abuse.rule.ban_time orelse 0, gop.value_ptr.time.mail);
+                    },
+                    .nginx => {
+                        gop.value_ptr.heat.http +|= abuse.rule.heat;
+                        gop.value_ptr.time.http = @max(abuse.rule.ban_time orelse 0, gop.value_ptr.time.http);
+                    },
+                    .postfix => {
+                        gop.value_ptr.heat.mail +|= abuse.rule.heat;
+                        gop.value_ptr.time.mail = @max(abuse.rule.ban_time orelse 0, gop.value_ptr.time.mail);
+                    },
+                    .sshd => {
+                        gop.value_ptr.heat.sshd +|= abuse.rule.heat;
+                        gop.value_ptr.time.sshd = @max(abuse.rule.ban_time orelse 0, gop.value_ptr.time.sshd);
+                    },
+                }
+            },
+            .trusted => |trust| {
+                if (!c.enable_trusted) continue;
+                const event = try parseLine(trust) orelse continue;
+
+                var b: [0xff]u8 = undefined;
+                const paddr = try std.fmt.bufPrint(&b, "{}", .{event.src_addr});
+                const gop = try trusted_addrs.getOrPut(a, paddr);
+                if (!gop.found_existing) {
+                    try syslog.log(.{ .trusted = .{ .addr = paddr } });
+                    gop.key_ptr.* = try a.dupe(u8, paddr);
+                }
+            },
+        };
     }
     return line_count;
 }
@@ -361,15 +382,41 @@ const BanData = struct {
 
 var baddies: std.StringArrayHashMapUnmanaged(BanData) = .{};
 var ban_list_updated: bool = false;
-var goodies: std.StringHashMapUnmanaged(void) = .{};
+var trusted_addrs: std.StringHashMapUnmanaged(void) = .{};
 
 const Formats = std.EnumArray(parser.Format, []const Detection);
 
-const Meaningful = struct {
-    format: parser.Format,
-    rule: Detection,
-    line: []const u8,
+const Meaningful = union(enum) {
+    abuse: Meaning,
+    trusted: Meaning,
+
+    pub const Meaning = struct {
+        format: parser.Format,
+        rule: Detection,
+        line: []const u8,
+    };
 };
+
+fn scanRules(comptime fmt: parser.Format, line: []const u8) ?Meaningful.Meaning {
+    const rules: Formats = comptime .init(.{
+        .dovecot = parser.dovecot.rules,
+        .nginx = parser.nginx.rules,
+        .postfix = parser.postfix.rules,
+        .sshd = parser.sshd.rules,
+    });
+
+    inline for (comptime rules.get(fmt)) |rule| {
+        if (indexOf(u8, line, rule.hit)) |i| {
+            if (rule.prefix) |prefix| {
+                inline for (prefix) |branch| {
+                    if (indexOf(u8, line[i..], branch.hit)) |_| {
+                        return .{ .abuse = .{ .format = fmt, .rule = rule, .line = line } };
+                    }
+                }
+            } else return .{ .abuse = .{ .format = fmt, .rule = rule, .line = line } };
+        }
+    }
+}
 
 fn findHit(line: []const u8) ?Meaningful {
     const rules: Formats = comptime .init(.{
@@ -379,25 +426,35 @@ fn findHit(line: []const u8) ?Meaningful {
         .sshd = parser.sshd.rules,
     });
 
-    inline for (parser.Format.fields) |fld| {
-        if (parser.Filters.get(fld)(line)) {
-            inline for (comptime rules.get(fld)) |rule| {
+    const trusted_rules: Formats = comptime .init(.{
+        .dovecot = parser.dovecot.trusted_rules,
+        .nginx = parser.nginx.trusted_rules,
+        .postfix = parser.postfix.trusted_rules,
+        .sshd = parser.sshd.trusted_rules,
+    });
+
+    inline for (parser.Format.fields) |pf_field| {
+        if (parser.Filters.get(pf_field)(line)) {
+            inline for (comptime rules.get(pf_field)) |rule| {
                 if (indexOf(u8, line, rule.hit)) |i| {
                     if (rule.prefix) |prefix| {
                         inline for (prefix) |branch| {
                             if (indexOf(u8, line[i..], branch.hit)) |_| {
-                                return .{
-                                    .format = fld,
-                                    .rule = branch,
-                                    .line = line,
-                                };
+                                return .{ .abuse = .{ .format = pf_field, .rule = branch, .line = line } };
                             }
                         }
-                    } else return .{
-                        .format = fld,
-                        .rule = rule,
-                        .line = line,
-                    };
+                    } else return .{ .abuse = .{ .format = pf_field, .rule = rule, .line = line } };
+                }
+            }
+            inline for (comptime trusted_rules.get(pf_field)) |rule| {
+                if (indexOf(u8, line, rule.hit)) |i| {
+                    if (rule.prefix) |prefix| {
+                        inline for (prefix) |branch| {
+                            if (indexOf(u8, line[i..], branch.hit)) |_| {
+                                return .{ .trusted = .{ .format = pf_field, .rule = rule, .line = line } };
+                            }
+                        }
+                    } else return .{ .trusted = .{ .format = pf_field, .rule = rule, .line = line } };
                 }
             }
         }
@@ -415,7 +472,7 @@ const Timestamp = packed struct(i64) {
     }
 };
 
-fn parseLine(mean: Meaningful) !?Event {
+fn parseLine(mean: Meaningful.Meaning) !?Event {
     return switch (mean.format) {
         .dovecot => parser.dovecot.parseLine(mean.line),
         .nginx => parser.nginx.parseLine(mean.line),
@@ -425,65 +482,65 @@ fn parseLine(mean: Meaningful) !?Event {
 }
 
 test parseLine {
-    const log_lines: []const Meaningful = &[_]Meaningful{
-        .{
+    const log_lines = &[_]Meaningful{
+        .{ .abuse = .{
             .rule = parser.postfix.rules[1],
             .format = .postfix,
             .line = "May 30 22:00:35 gr mail.warn postfix/smtps/smtpd[27561]: warning: unknown[117.217.120.52]" ++
                 ": SASL PLAIN authentication failed: (reason unavailable), sasl_username=gwe@gr.ht",
-        },
-        .{
+        } },
+        .{ .abuse = .{
             .rule = parser.postfix.rules[1],
             .format = .postfix,
             .line = "May 30 22:00:35 gr mail.info postfix/smtps/smtpd[27561]: warning: " ++
                 "unknown[117.217.120.52]: SASL PLAIN authentication failed: (reason unavailable)," ++
                 "sasl_username=gwe@gr.ht",
-        },
-        .{
+        } },
+        .{ .abuse = .{
             .rule = parser.postfix.rules[4],
             .format = .postfix,
             .line = "Jul  3 00:46:09 gr mail.info postfix/smtp/smtpd[10108]: disconnect from " ++
                 "unknown[77.90.185.6] ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4",
-        },
-        .{
+        } },
+        .{ .abuse = .{
             .rule = parser.nginx.rules[0],
             .format = .nginx,
             .line = "149.255.62.135 - - [29/May/2025:23:43:02 +0000] \"GET /.env HTTP/1.1\" 200 " ++
                 "47 \"-\" \"Cpanel-HTTP-Client/1.0\"",
-        },
-        .{
+        } },
+        .{ .abuse = .{
             .rule = parser.nginx.rules[3].prefix.?[0],
             .format = .nginx,
             .line = "185.177.72.104 - - [03/Jul/2025:21:06:55 +0000] \"GET /.git/config HTTP/1.1\" " ++
                 "404 181 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML," ++
                 "like Gecko) Chrome/91.0.4472.124 Safari/537.36\" \"-\"",
-        },
-        .{
+        } },
+        .{ .abuse = .{
             .rule = parser.sshd.rules[0],
             .format = .sshd,
             .line = "May 29 15:21:53 gr auth.info sshd-session[25292]: Connection closed by " ++
                 "invalid user root 20.64.105.146 port 34292 [preauth]",
-        },
-        .{
+        } },
+        .{ .abuse = .{
             .rule = parser.dovecot.rules[0],
             .format = .dovecot,
             .line = "Jun 12 19:24:38 imap-login: Info: Login aborted: Connection closed " ++
                 "(auth failed, 3 attempts in 15 secs) (auth_failed): user=<eft>, method=PLAIN, rip=80.51.181.144, " ++
                 "lip=127.4.20.69, TLS, session=<25Nw4GQ3Ms9QM7WQ>",
-        },
-        .{
+        } },
+        .{ .abuse = .{
             .rule = parser.postfix.rules[7].prefix.?[0],
             .format = .postfix,
             .line = "Jul 31 17:13:38 gr mail.info postfix/smtp/smtpd[9566]: NOQUEUE: reject: RCPT from " ++
                 "unknown[162.218.52.165]: 450 4.7.1 Client host rejected: cannot find your reverse hostname," ++
                 " [162.218.52.165]; from=<bounce@jantool.org> to=<banned_email@gr.ht> proto=ESMTP helo=<mail1.jantool.org>",
-        },
-        .{
+        } },
+        .{ .trusted = .{
             .rule = parser.sshd.trusted_rules[0],
             .format = .sshd,
             .line = "Jul 31 20:13:59 gr auth.info sshd-session[10237]: Accepted publickey for grayhatter" ++
                 " from 127.42.0.69 port 53142 ssh2: ED25519 SHA256:ezIQDYy8JvgUcKabQeIrT1UK/xmtDdK04UrkckY+VAQ",
-        },
+        } },
     };
 
     const log_hits = &[_]Event{
@@ -495,13 +552,23 @@ test parseLine {
         .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 64, 105, 146 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 80, 51, 181, 144 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 162, 218, 52, 165 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 127, 42, 0, 69 } }, .timestamp = 0, .extra = "" },
     };
 
-    for (log_lines, log_hits) |line, hit| {
-        try std.testing.expectEqualStrings(line.line, findHit(line.line).?.line);
-        try std.testing.expectEqualDeep(hit, parseLine(line));
-        try std.testing.expectEqualDeep(line.rule, findHit(line.line).?.rule);
-        try std.testing.expectEqualDeep(line.rule.heat, findHit(line.line).?.rule.heat);
+    for (log_lines, log_hits) |log, expected_hit| {
+        const log_meaning = switch (log) {
+            inline else => |m| m,
+        };
+        const hit = findHit(log_meaning.line);
+
+        try std.testing.expectEqualDeep(log, hit);
+        const meaning: Meaningful.Meaning = switch (hit.?) {
+            inline else => |m| m,
+        };
+        try std.testing.expectEqualStrings(log_meaning.line, meaning.line);
+        try std.testing.expectEqualDeep(expected_hit, parseLine(log_meaning));
+        try std.testing.expectEqualDeep(log_meaning.rule, meaning.rule);
+        try std.testing.expectEqualDeep(log_meaning.rule.heat, meaning.rule.heat);
     }
 }
 
@@ -511,6 +578,7 @@ fn sleep(ms: u64) void {
 
 test {
     _ = &Config;
+    _ = std.testing.refAllDecls(@This());
 }
 
 pub const Addr = net.Addr;
@@ -528,7 +596,8 @@ const net = @import("net.zig");
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const FileArray = std.ArrayListUnmanaged(File);
+const ArrayList = std.ArrayListUnmanaged;
+const FileArray = ArrayList(File);
 const indexOf = std.mem.indexOf;
 const startsWith = std.mem.startsWith;
 const eql = std.mem.eql;

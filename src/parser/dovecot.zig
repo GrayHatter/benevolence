@@ -3,6 +3,8 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "Connection closed (auth failed," },
 };
 
+pub const trusted_rules: []const Detection = &.{};
+
 pub fn filter(line: []const u8) bool {
     return indexOf(u8, line, "imap-login:") != null;
 }
