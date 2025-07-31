@@ -1,10 +1,15 @@
 pub const rules: []const Detection = &[_]Detection{
-    .{ .hit = "SASL LOGIN authentication failed", .heat = 10, .ban_time = default },
-    .{ .hit = "SASL PLAIN authentication failed", .heat = 10, .ban_time = default },
-    .{ .hit = "NOQUEUE: lost connection after AUTH from", .heat = 1, .ban_time = default },
-    .{ .hit = "improper command pipelining after CONNECT from ", .ban_time = 30 },
-    .{ .hit = "ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4", .heat = 1 },
-    .{ .hit = "] ehlo=1 auth=0/1 commands=", .heat = 1 },
+    .{ .hit = "SASL LOGIN authentication failed", .heat = 32, .ban_time = default },
+    .{ .hit = "SASL PLAIN authentication failed", .heat = 32, .ban_time = default },
+    .{ .hit = "NOQUEUE: lost connection after AUTH from", .heat = 8, .ban_time = default },
+    .{ .hit = "improper command pipelining after CONNECT from ", .heat = 8, .ban_time = 30 },
+    .{ .hit = "ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4", .heat = 8 },
+    .{ .hit = "] ehlo=1 auth=0/1 commands=", .heat = 8 },
+    .{ .hit = "NOQUEUE: lost connection after CONNECT from unknown", .heat = 2, .ban_time = 3600 },
+
+    .{ .hit = "Client host rejected: cannot find your reverse hostname", .prefix = &.{
+        .{ .hit = " to=<bannable_email_here@gr.ht>", .heat = 16, .ban_time = 3600 * 2 },
+    }, .heat = 0, .ban_time = 0 },
 };
 
 const default: u32 = 14 * 86400;
@@ -21,7 +26,7 @@ pub fn parseAddr(line: []const u8) !Addr {
         if (lastIndexOf(u8, line[0..j], "[")) |i| {
             return try Addr.parse(line[i + 1 .. j]);
         }
-    } else if (indexOfPrefix(line, "disconnect from unknown[")) |i| {
+    } else if (indexOfPrefix(line, " from unknown[")) |i| {
         if (indexOfScalarPos(u8, line, i, ']')) |j| {
             return try Addr.parse(line[i..j]);
         }

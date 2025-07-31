@@ -3,7 +3,7 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "PHP/eval-stdin.php HTTP/1." },
     .{ .hit = "../../etc/passwd HTTP/1" },
 
-    .{ .hit = "GET /", .tree = &[_]Detection{
+    .{ .hit = "GET /", .prefix = &[_]Detection{
         .{ .hit = "GET /.git/config " },
         .{ .hit = "GET /config.json HTTP/" },
         .{ .hit = "GET /_all_dbs HTTP/" },

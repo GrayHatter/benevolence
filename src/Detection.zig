@@ -1,8 +1,8 @@
 hit: []const u8,
 
-tree: ?[]const Detection = null,
+prefix: ?[]const Detection = null,
 
-heat: u16 = 1,
+heat: u16 = 16,
 decay: u16 = 0,
 ban_time: ?u32 = null,
 
