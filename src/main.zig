@@ -433,6 +433,8 @@ fn findHit(line: []const u8) ?Meaningful {
         .sshd = parser.sshd.trusted_rules,
     });
 
+    if (indexOf(u8, line, "auth.warn benevolence") != null) return null;
+
     inline for (parser.Format.fields) |pf_field| {
         if (parser.Filters.get(pf_field)(line)) {
             inline for (comptime rules.get(pf_field)) |rule| {
