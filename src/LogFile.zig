@@ -1,13 +1,10 @@
 path: []const u8,
 file: std.fs.File,
-src: union(enum) {
-    stdin: void,
-    fbs: std.io.FixedBufferStream([]const u8),
-},
+reader: std.fs.File.Reader,
 mode: Mode,
-only: ?parser.Format,
-meta: std.fs.File.Metadata,
-line_buffer: [4096]u8 = undefined,
+size: u64,
+only: ?parser.Format = null,
+line_buffer: [0x2000]u8 = undefined,
 
 const LogFile = @This();
 
@@ -20,6 +17,8 @@ pub const Mode = enum {
     watch,
     /// process new lines, try to reopen fd on error
     follow,
+    /// won't reopen
+    stdin,
 };
 
 pub fn init(path: []const u8, watch: Mode, only: ?parser.Format) !LogFile {
@@ -27,37 +26,38 @@ pub fn init(path: []const u8, watch: Mode, only: ?parser.Format) !LogFile {
     const lf: LogFile = .{
         .path = path,
         .file = f,
-        .src = .{
-            .fbs = .{
-                .buffer = try mmap(f),
-                .pos = 0,
-            },
-        },
+        .reader = undefined,
+        .size = 0,
         .mode = watch,
         .only = only,
-        .meta = try f.metadata(),
     };
 
     return lf;
 }
 
+pub fn initReader(lf: *LogFile) void {
+    lf.reader = lf.file.reader(&lf.line_buffer);
+    lf.size = lf.reader.size orelse 0;
+}
+
 pub fn initStdin() !LogFile {
-    const in = std.io.getStdIn();
+    const in = std.fs.File.stdin();
     return .{
         .path = "/dev/stdin",
         .file = in,
-        .src = .{
-            .stdin = {},
-        },
+        .reader = undefined,
+        .size = 0,
         .mode = .watch,
         .only = null,
-        .meta = try in.metadata(),
     };
 }
 
 pub fn reInit(lf: *LogFile) !void {
-    if (lf.src == .stdin) return error.CantReopenStdin;
-    if (lf.mode != .closed) lf.raze();
+    switch (lf.mode) {
+        .closed, .once, .stdin => return,
+        .watch, .follow => lf.raze(),
+    }
+
     const f = std.fs.cwd().openFile(lf.path, .{}) catch |err| switch (err) {
         error.FileNotFound => {
             log.err("Unable to reinit for {s} file not found.", .{lf.path});
@@ -65,23 +65,11 @@ pub fn reInit(lf: *LogFile) !void {
         },
         else => return err,
     };
-    lf.* = .{
-        .path = lf.path,
-        .only = lf.only,
-        .file = lf.file,
-        .meta = try lf.file.metadata(),
-        .src = .{ .fbs = .{ .buffer = try mmap(f), .pos = 0 } },
-        .mode = .follow,
-    };
+    lf.file = f;
 }
 
 pub fn raze(lf: LogFile) void {
     lf.file.close();
-    switch (lf.src) {
-        .fbs => |fbs| std.posix.munmap(@alignCast(fbs.buffer)),
-        else => {},
-    }
-    //lf.mode = .closed;
 }
 
 fn mmap(f: std.fs.File) ![]const u8 {
@@ -110,23 +98,22 @@ fn remap(lf: *LogFile) !void {
 }
 
 pub fn line(lf: *LogFile) !?[]const u8 {
-    switch (lf.src) {
-        .fbs => |*fbs| {
-            if (fbs.pos == fbs.buffer.len) try lf.remap();
-            var reader = fbs.reader();
-            return try reader.readUntilDelimiterOrEof(&lf.line_buffer, '\n');
-        },
-        .stdin => {
-            var pollfd: [1]std.os.linux.pollfd = .{.{
-                .fd = lf.file.handle,
-                .events = std.posix.POLL.IN,
-                .revents = 0,
-            }};
-            if (std.os.linux.poll(&pollfd, 1, 0) != 1) return null;
-            var reader = lf.file.reader();
-            return try reader.readUntilDelimiter(&lf.line_buffer, '\n');
-        },
+    if (lf.mode == .stdin) {
+        var pollfd: [1]std.os.linux.pollfd = .{.{
+            .fd = lf.file.handle,
+            .events = std.posix.POLL.IN,
+            .revents = 0,
+        }};
+        if (std.os.linux.poll(&pollfd, 1, 0) != 1) return null;
     }
+    return lf.reader.interface.takeDelimiterInclusive('\n') catch |err| switch (err) {
+        error.EndOfStream => {
+            // lf.checkAndRefollow();
+            return null;
+        },
+        error.StreamTooLong => return err, // TODO, seek until \n then drop
+        error.ReadFailed => return err,
+    };
 }
 
 const parser = @import("parser.zig");

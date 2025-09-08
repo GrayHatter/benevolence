@@ -1,4 +1,4 @@
-default_watch: File.Mode = .once,
+default_watch: LogFile.Mode = .once,
 damonize: ?bool = null,
 quiet: bool = false,
 bantime: []const u8 = "",
@@ -143,7 +143,7 @@ test parse {
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
 
-    var fbuf: [32]File = undefined;
+    var fbuf: [32]LogFile = undefined;
     var files: FileArray = .initBuffer(&fbuf);
 
     var c: Config = .{};
@@ -227,7 +227,7 @@ test "parse multi" {
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
 
-    var fbuf: [32]File = undefined;
+    var fbuf: [32]LogFile = undefined;
     var files: FileArray = .initBuffer(&fbuf);
     var c: Config = .{};
     try c.parse(std.testing.allocator, cfile, &files);
@@ -240,8 +240,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const syslog = @import("syslog.zig");
 const bufPrint = std.fmt.bufPrint;
-const File = @import("File.zig");
-const FileArray = std.ArrayListUnmanaged(File);
+const LogFile = @import("LogFile.zig");
+const FileArray = std.ArrayListUnmanaged(LogFile);
 const indexOf = std.mem.indexOf;
 const startsWith = std.mem.startsWith;
 const endsWith = std.mem.endsWith;

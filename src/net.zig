@@ -51,12 +51,7 @@ pub const Addr = union(enum) {
         } else return error.UnknownAddr;
     }
 
-    pub fn format(
-        addr: Addr,
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        w: anytype,
-    ) !void {
+    pub fn format(addr: Addr, w: *std.Io.Writer) !void {
         switch (addr) {
             .ipv4 => |ip| return w.print("{}.{}.{}.{}", .{ ip[0], ip[1], ip[2], ip[3] }),
             .ipv6 => unreachable,

@@ -31,7 +31,7 @@ fn usage(arg0: []const u8) noreturn {
 var c: Config = .{};
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout();
 
     var debug_a: std.heap.GeneralPurposeAllocator(.{ .safety = true }) = .{};
     const a = debug_a.allocator();
@@ -111,13 +111,17 @@ pub fn main() !void {
         const pid = try std.posix.fork();
         if (pid > 0) {
             var f = try std.fs.cwd().createFile(pid_file, .{});
-            var w = f.writer();
-            try w.print("{}\n", .{pid});
+            var w = f.writer(&.{});
+            try w.interface.print("{}\n", .{pid});
             f.close();
             std.posix.exit(0);
         }
     }
     signals.setDefaultMask();
+
+    for (log_files.items) |*lf| {
+        lf.initReader();
+    }
 
     try core(a, &log_files, stdout);
 }
@@ -134,14 +138,16 @@ fn core(a: Allocator, src_files: *FileArray, stdout: anytype) !void {
     if (c.exec_rules) {
         try execBanList(a);
     } else if (!c.quiet) {
-        try printBanList(a, stdout.any());
+        var w_b: [0x800]u8 = undefined;
+        var w = stdout.writer(&w_b);
+        try printBanList(a, &w.interface);
     }
 
     var watch_list: FileArray = try .initCapacity(a, src_files.items.len);
 
     while (src_files.pop()) |file| {
         switch (file.mode) {
-            .once, .closed => {
+            .once, .closed, .stdin => {
                 file.raze();
             },
             .watch, .follow => {
@@ -155,7 +161,7 @@ fn core(a: Allocator, src_files: *FileArray, stdout: anytype) !void {
             switch (lf.mode) {
                 .closed => continue,
                 .once => @panic("unreachable"),
-                .watch, .follow => {
+                .watch, .follow, .stdin => {
                     _ = drainFile(a, lf) catch |err| {
                         std.debug.print("err {}\n", .{err});
                         lf.raze();
@@ -168,7 +174,9 @@ fn core(a: Allocator, src_files: *FileArray, stdout: anytype) !void {
             if (c.exec_rules) {
                 try execBanList(a);
             } else if (!c.quiet) {
-                try printBanList(a, stdout.any());
+                var w_b: [0x800]u8 = undefined;
+                var w = stdout.writer(&w_b);
+                try printBanList(a, &w.interface);
             }
             ban_list_updated = false;
         }
@@ -269,7 +277,7 @@ fn execBanList(a: Allocator) !void {
     if (sshd.items.len > 4) try execList("sshd", a, sshd.items);
 }
 
-fn printBanList(a: Allocator, stdout: std.io.AnyWriter) !void {
+fn printBanList(a: Allocator, stdout: *std.Io.Writer) !void {
     var http, var mail, var sshd = try genLists(a);
     defer {
         http.deinit(a);
@@ -290,7 +298,7 @@ fn printBanList(a: Allocator, stdout: std.io.AnyWriter) !void {
     }
 }
 
-fn drainFile(a: Allocator, logfile: *File) !usize {
+fn drainFile(a: Allocator, logfile: *LogFile) !usize {
     var line_count: usize = 0;
     while (try logfile.line()) |line| {
         line_count += 1;
@@ -299,7 +307,7 @@ fn drainFile(a: Allocator, logfile: *File) !usize {
                 const event = try parseLine(abuse) orelse continue;
 
                 var b: [0xff]u8 = undefined;
-                const paddr = try std.fmt.bufPrint(&b, "{}", .{event.src_addr});
+                const paddr = try std.fmt.bufPrint(&b, "{f}", .{event.src_addr});
                 if (trusted_addrs.contains(paddr)) {
                     try syslog.log(.{ .trustedabuse = .{ .addr = paddr } });
                     continue;
@@ -338,7 +346,7 @@ fn drainFile(a: Allocator, logfile: *File) !usize {
                 const event = try parseLine(trust) orelse continue;
 
                 var b: [0xff]u8 = undefined;
-                const paddr = try std.fmt.bufPrint(&b, "{}", .{event.src_addr});
+                const paddr = try std.fmt.bufPrint(&b, "{f}", .{event.src_addr});
                 const gop = try trusted_addrs.getOrPut(a, paddr);
                 if (!gop.found_existing) {
                     try syslog.log(.{ .trusted = .{ .addr = paddr } });
@@ -593,13 +601,13 @@ const parser = @import("parser.zig");
 const Event = @import("Event.zig");
 const Detection = @import("Detection.zig");
 //const Actionable = @import("Actionable.zig");
-const File = @import("File.zig");
+const LogFile = @import("LogFile.zig");
 const net = @import("net.zig");
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayListUnmanaged;
-const FileArray = ArrayList(File);
+const FileArray = ArrayList(LogFile);
 const indexOf = std.mem.indexOf;
 const startsWith = std.mem.startsWith;
 const eql = std.mem.eql;

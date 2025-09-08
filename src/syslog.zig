@@ -93,8 +93,7 @@ pub const Priority = packed struct(u8) {
         return @bitCast(p);
     }
 
-    pub fn format(p: Priority, comptime s: []const u8, _: anytype, out: anytype) !void {
-        _ = s;
+    pub fn format(p: Priority, out: *std.Io.Writer) !void {
         try out.print("{}", .{@as(u8, @bitCast(p))});
     }
 };
@@ -115,8 +114,8 @@ pub fn log(evt: Event) !void {
     try std.posix.connect(s, @ptrCast(&addr), addr_len);
     defer std.posix.close(s);
 
-    const sp_str = "<{}>{s}[{}]: ";
-    const lp_str = "<{}>{s}/{s}[{}]: ";
+    const sp_str = "<{f}>{s}[{}]: ";
+    const lp_str = "<{f}>{s}/{s}[{}]: ";
 
     switch (evt) {
         .banned => |ban| {
