@@ -17,6 +17,7 @@ fn usage(arg0: []const u8) noreturn {
         \\    --quiet                           Don't print rules
         \\    --enable-trusted                  Enable auto trusted exemption list
         \\    --dry-run                         Don't execute rules
+        \\    --debug-rules     <filename>      Print rule and matched hit to <filename> [not yet implemented]
         \\
         \\    --                                Use stdin
         \\    --watch           <filename>      Process and then tail for new data
