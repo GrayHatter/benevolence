@@ -16,20 +16,34 @@ fn usage(arg0: []const u8) noreturn {
         \\    --syslog                          Log ban events to syslog [logger]
         \\    --quiet                           Don't print rules
         \\    --enable-trusted                  Enable auto trusted exemption list
-        \\    --dry-run                         Don't execute rules
+        \\    --dry-run                         Don't execute rules  
+    ++ if (builtin.mode == .Debug)
         \\    --debug-rules     <filename>      Print rule and matched hit to <filename> [not yet implemented]
-        \\
-        \\    --                                Use stdin
-        \\    --watch           <filename>      Process and then tail for new data
-        \\    --watch-all       <filename>      Process and then tail all following logs
-        \\
-        \\    --ban-time        <timeout>       Default time to ban a host [504h]
-        \\
+    else
+        "" ++
+            \\
+            \\    --                                Use stdin
+            \\    --watch           <filename>      Process and then tail for new data
+            \\    --watch-all       <filename>      Process and then tail all following logs
+            \\
+            \\    --ban-time        <timeout>       Default time to ban a host [504h]
+            \\
     , .{arg0});
     std.posix.exit(1);
 }
 
 var c: Config = .{};
+
+var dwb: [256]u8 = undefined;
+var discarding: Writer.Discarding = .init(&dwb);
+var discarding_writer: ?*Writer = &discarding.writer;
+const builtin = @import("builtin");
+
+fn debug_rule(detection: Detection, hit: []const u8, file: []const u8) !void {
+    if (comptime builtin.mode != .Debug) return;
+
+    discarding_writer.print("{s} -> {} [{s}]\n", .{ hit, detection, file });
+}
 
 pub fn main() !void {
     const stdout = std.fs.File.stdout();
@@ -609,6 +623,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayListUnmanaged;
 const FileArray = ArrayList(LogFile);
+const Writer = std.Io.Writer;
 const indexOf = std.mem.indexOf;
 const startsWith = std.mem.startsWith;
 const eql = std.mem.eql;
