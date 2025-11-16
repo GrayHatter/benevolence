@@ -1,4 +1,4 @@
-pub var enabled: bool = false;
+pub var enabled: ?Io = null;
 
 const Event = union(enum) {
     banned: Banned,
@@ -99,20 +99,25 @@ pub const Priority = packed struct(u8) {
 };
 
 pub fn log(evt: Event) !void {
-    if (!enabled) return;
+    const io = enabled orelse return;
 
     const tag: []const u8 = "benevolence";
     const pid = std.os.linux.getpid();
-    var b: [0x2ff]u8 = undefined;
-    var buffer: std.ArrayListUnmanaged(u8) = .initBuffer(&b);
-    var w = buffer.fixedWriter();
+    //var b: [0x2ff]u8 = undefined;
+    //var buffer: Writer = .fixed(&b);
+    //var w = buffer.fixedWriter();
 
-    var addr: sockaddr_unix = .{ .family = std.posix.AF.UNIX, .path = @splat(0) };
-    @memcpy(addr.path[0..8], "/dev/log");
-    const addr_len: u32 = @sizeOf(std.posix.sockaddr.un);
-    const s = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.DGRAM, 0);
-    try std.posix.connect(s, @ptrCast(&addr), addr_len);
-    defer std.posix.close(s);
+    //var addr: sockaddr_unix = .{ .family = std.posix.AF.UNIX, .path = @splat(0) };
+    //@memcpy(addr.path[0..8], "/dev/log");
+    //const addr_len: u32 = @sizeOf(std.posix.sockaddr.un);
+    //const s = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.DGRAM, 0);
+    //try std.posix.connect(s, @ptrCast(&addr), addr_len);
+    //defer std.posix.close(s);
+    var dev_log: Io.net.UnixAddress = try .init("/dev/log");
+    var s = try dev_log.connect(io);
+    var w_b: [0x2ff]u8 = undefined;
+    var writer = s.writer(io, &w_b);
+    const w = &writer.interface;
 
     const sp_str = "<{f}>{s}[{}]: ";
     const lp_str = "<{f}>{s}/{s}[{}]: ";
@@ -158,9 +163,12 @@ pub fn log(evt: Event) !void {
             try w.print(sp_str ++ "Error: ({s}) {s} '{s}", .{ pri, tag, pid, err.err, err.str, err.file });
         },
     }
-    _ = try std.posix.write(s, buffer.items);
+    //_ = try std.posix.write(s, buffer.items);
+    try w.flush();
 }
 
 const std = @import("std");
+const Writer = Io.Writer;
+const Io = std.Io;
 const sockaddr_unix = std.posix.sockaddr.un;
 const bPrint = std.fmt.bufPrint;

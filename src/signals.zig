@@ -1,8 +1,8 @@
 pub const Signal = enum(u6) {
-    hup = SIG.HUP,
-    quit = SIG.QUIT,
-    usr1 = SIG.USR1,
-    usr2 = SIG.USR2,
+    hup = @intFromEnum(SIG.HUP),
+    quit = @intFromEnum(SIG.QUIT),
+    usr1 = @intFromEnum(SIG.USR1),
+    usr2 = @intFromEnum(SIG.USR2),
 };
 
 fn sigtimedwait(set: *const sigset_t, info: *siginfo, timeout: *const timespec) isize {
@@ -21,13 +21,13 @@ pub fn setDefaultMask() void {
 }
 
 pub fn check(msec: isize) ?Signal {
-    var info: siginfo = .{ .signo = 0, .code = 0, .errno = 0, .fields = undefined };
+    var info: siginfo = .{ .signo = undefined, .code = 0, .errno = 0, .fields = undefined };
     //const set: sigset_t = @splat(~@as(u32, 0));
     const timeout: timespec = .{ .sec = 0, .nsec = 1_000_000 * msec };
     const timed = sigtimedwait(&sigset, &info, &timeout);
     if (-timed != @intFromEnum(std.os.linux.E.AGAIN)) {
         return switch (info.signo) {
-            SIG.HUP, SIG.QUIT, SIG.USR1, SIG.USR2 => @enumFromInt(info.signo),
+            SIG.HUP, SIG.QUIT, SIG.USR1, SIG.USR2 => |signo| @enumFromInt(@intFromEnum(signo)),
             else => {
                 std.debug.print("unreachable signal returned by system\n", .{});
                 return null;

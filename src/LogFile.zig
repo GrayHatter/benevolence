@@ -1,6 +1,6 @@
 path: []const u8,
-file: std.fs.File,
-reader: std.fs.File.Reader,
+file: File,
+reader: File.Reader,
 mode: Mode,
 size: u64,
 only: ?parser.Format = null,
@@ -21,8 +21,8 @@ pub const Mode = enum {
     stdin,
 };
 
-pub fn init(path: []const u8, watch: Mode, only: ?parser.Format) !LogFile {
-    const f = try std.fs.cwd().openFile(path, .{});
+pub fn init(path: []const u8, watch: Mode, only: ?parser.Format, io: Io) !LogFile {
+    const f = try Io.Dir.cwd().openFile(io, path, .{});
     const lf: LogFile = .{
         .path = path,
         .file = f,
@@ -35,13 +35,13 @@ pub fn init(path: []const u8, watch: Mode, only: ?parser.Format) !LogFile {
     return lf;
 }
 
-pub fn initReader(lf: *LogFile) void {
-    lf.reader = lf.file.reader(&lf.line_buffer);
+pub fn initReader(lf: *LogFile, io: Io) void {
+    lf.reader = lf.file.reader(io, &lf.line_buffer);
     lf.size = lf.reader.size orelse 0;
 }
 
 pub fn initStdin() !LogFile {
-    const in = std.fs.File.stdin();
+    const in = File.stdin();
     return .{
         .path = "/dev/stdin",
         .file = in,
@@ -52,13 +52,13 @@ pub fn initStdin() !LogFile {
     };
 }
 
-pub fn reInit(lf: *LogFile) !void {
+pub fn reInit(lf: *LogFile, io: Io) !void {
     switch (lf.mode) {
         .closed, .once, .stdin => return,
-        .watch, .follow => lf.raze(),
+        .watch, .follow => lf.raze(io),
     }
 
-    const f = std.fs.cwd().openFile(lf.path, .{}) catch |err| switch (err) {
+    const f = Io.Dir.cwd().openFile(io, lf.path, .{}) catch |err| switch (err) {
         error.FileNotFound => {
             log.err("Unable to reinit for {s} file not found.", .{lf.path});
             return;
@@ -68,33 +68,8 @@ pub fn reInit(lf: *LogFile) !void {
     lf.file = f;
 }
 
-pub fn raze(lf: LogFile) void {
-    lf.file.close();
-}
-
-fn mmap(f: std.fs.File) ![]const u8 {
-    const PROT = std.posix.PROT;
-    const length = try f.getEndPos();
-    if (length == 0) return &[0]u8{};
-    const offset = 0;
-    return std.posix.mmap(null, length, PROT.READ, .{ .TYPE = .SHARED }, f.handle, offset);
-}
-
-fn remap(lf: *LogFile) !void {
-    const meta = try lf.file.metadata();
-    if (meta.size() < lf.meta.size()) return error.Truncated;
-    if (meta.size() == lf.meta.size()) {
-        lf.meta = meta;
-        return;
-    }
-    lf.src.fbs.buffer = try std.posix.mremap(
-        @alignCast(@constCast(lf.src.fbs.buffer.ptr)),
-        lf.src.fbs.buffer.len,
-        meta.size(),
-        .{ .MAYMOVE = true },
-        null,
-    );
-    lf.meta = meta;
+pub fn raze(lf: LogFile, io: Io) void {
+    lf.file.close(io);
 }
 
 pub fn line(lf: *LogFile) !?[]const u8 {
@@ -119,3 +94,5 @@ pub fn line(lf: *LogFile) !?[]const u8 {
 const parser = @import("parser.zig");
 const std = @import("std");
 const log = std.log.scoped(.file);
+const Io = std.Io;
+const File = Io.File;

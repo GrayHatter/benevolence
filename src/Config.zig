@@ -7,6 +7,7 @@ dryrun: bool = false,
 exec_rules: bool = false,
 pid_file: ?[]const u8 = null,
 enable_trusted: bool = false,
+syslog: bool = true,
 
 bantime_buffer: [64]u8 = @splat(' '),
 
@@ -26,33 +27,25 @@ pub fn validateBantime(cfg: *Config, bantime_w: []const u8) !void {
     }
 }
 
-pub fn parse(c: *Config, a: Allocator, fname: []const u8, files: *FileArray) !void {
-    const fd = std.fs.cwd().openFile(fname, .{}) catch |err| switch (err) {
+pub fn parse(c: *Config, fname: []const u8, files: *FileArray, a: Allocator, io: Io) !void {
+    const fd = Io.Dir.cwd().openFile(io, fname, .{}) catch |err| switch (err) {
         error.FileNotFound => {
             std.debug.print("Error config file missing {s}\n", .{fname});
             std.posix.exit(1);
         },
         else => return err,
     };
-    if (try fd.getEndPos() == 0) return;
-    const config = try std.posix.mmap(
-        null,
-        try fd.getEndPos(),
-        std.posix.PROT.READ,
-        .{ .TYPE = .SHARED },
-        fd.handle,
-        0,
-    );
-    fd.close();
-    syslog.enabled = true;
+    defer fd.close(io);
     if (!c.dryrun) c.exec_rules = true;
     if (c.damonize == null) c.damonize = true;
 
-    var fbs = std.io.FixedBufferStream([]const u8){ .buffer = config, .pos = 0 };
-    var reader = fbs.reader();
-    var line_buf: [2048]u8 = undefined;
-    while (try reader.readUntilDelimiterOrEof(&line_buf, '\n')) |line| {
-        try c.parseLine(a, line, files);
+    var r_b: [0x8000]u8 = undefined;
+    var reader = fd.reader(io, &r_b);
+    while (reader.interface.takeDelimiterInclusive('\n')) |line| {
+        try c.parseLine(line, files, a, io);
+    } else |err| switch (err) {
+        error.EndOfStream => {},
+        else => return err,
     }
 }
 
@@ -63,7 +56,7 @@ fn truthy(arg: []const u8) bool {
     return true;
 }
 
-fn parseLine(c: *Config, a: Allocator, full: []const u8, files: *FileArray) !void {
+fn parseLine(c: *Config, full: []const u8, files: *FileArray, a: Allocator, io: Io) !void {
     const line = std.mem.trim(u8, full, " \t\n\r");
     if (line.len < 4) return;
     if (line[0] == '#') return;
@@ -72,15 +65,15 @@ fn parseLine(c: *Config, a: Allocator, full: []const u8, files: *FileArray) !voi
         const arg: []const u8 = std.mem.trim(u8, line[argidx + 1 ..], " \t\n\r");
         if (arg.len == 0) return error.ConfigValueMissing;
         if (startsWith(u8, line, "file")) {
-            try parseLineFile(a, files, null, arg);
+            try parseLineFile(files, null, arg, a, io);
         } else if (startsWith(u8, line, "sshd")) {
-            try parseLineFile(a, files, .sshd, arg);
+            try parseLineFile(files, .sshd, arg, a, io);
         } else if (startsWith(u8, line, "postfix")) {
-            try parseLineFile(a, files, .postfix, arg);
+            try parseLineFile(files, .postfix, arg, a, io);
         } else if (startsWith(u8, line, "nginx")) {
-            try parseLineFile(a, files, .nginx, arg);
+            try parseLineFile(files, .nginx, arg, a, io);
         } else if (startsWith(u8, line, "dovecot")) {
-            try parseLineFile(a, files, .dovecot, arg);
+            try parseLineFile(files, .dovecot, arg, a, io);
         } else if (startsWith(u8, line, "bantime")) {
             try c.validateBantime(arg);
         } else if (startsWith(u8, line, "enable_trusted")) {
@@ -89,11 +82,11 @@ fn parseLine(c: *Config, a: Allocator, full: []const u8, files: *FileArray) !voi
     }
 
     if (startsWith(u8, line, "syslog")) {
-        syslog.enabled = true; // TODO support false and disabled
+        c.syslog = true; // TODO support false and disabled
     }
 }
 
-fn parseLineFile(a: Allocator, log_files: *FileArray, format: ?parser.Format, arg: []const u8) !void {
+fn parseLineFile(log_files: *FileArray, format: ?parser.Format, arg: []const u8, a: Allocator, io: Io) !void {
     if (arg[0] != '/') return error.ConfigPathNotAbsolute;
     if (indexOf(u8, arg, "*")) |i| {
         const prefix = arg[0..i];
@@ -102,19 +95,22 @@ fn parseLineFile(a: Allocator, log_files: *FileArray, format: ?parser.Format, ar
         if (prefix[prefix.len - 1] != '/') return error.NotImplemented;
         const stat = try std.fs.cwd().statFile(prefix);
         if (stat.kind != .directory) return error.NotADir;
-        var dir = try std.fs.cwd().openDir(prefix, .{ .iterate = true });
-        defer dir.close();
-        var itr = dir.iterate();
+        var dir = try Io.Dir.cwd().openDir(io, prefix, .{ .iterate = true });
+        defer dir.close(io);
+        var old: std.fs.Dir = .adaptFromNewApi(dir);
+        var itr = old.iterate();
         while (try itr.next()) |subp| {
             if (subp.kind != .file) continue;
             if (!endsWith(u8, subp.name, postfix)) continue;
             const fname = try std.fmt.allocPrint(a, "{s}{s}", .{ prefix, subp.name });
-            log_files.appendAssumeCapacity(try .init(fname, .follow, format));
+            log_files.appendAssumeCapacity(try .init(fname, .follow, format, io));
         }
-    } else log_files.appendAssumeCapacity(try .init(try a.dupe(u8, arg), .follow, format));
+    } else log_files.appendAssumeCapacity(try .init(try a.dupe(u8, arg), .follow, format, io));
 }
 
 test parse {
+    var a = std.testing.allocator;
+    const io = std.testing.io;
     var td = std.testing.tmpDir(.{});
     defer td.cleanup();
 
@@ -139,7 +135,6 @@ test parse {
 
     try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
 
-    var a = std.testing.allocator;
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
 
@@ -147,14 +142,16 @@ test parse {
     var files: FileArray = .initBuffer(&fbuf);
 
     var c: Config = .{};
-    try c.parse(std.testing.allocator, cfile, &files);
+    try c.parse(cfile, &files, a, io);
     try std.testing.expectEqual(@as(usize, 5), files.items.len);
     try std.testing.expectEqualStrings(" timeout 14d", c.bantime);
-    try std.testing.expectEqual(true, syslog.enabled);
-    for (files.items) |f| std.testing.allocator.free(f.path);
+    try std.testing.expectEqual(true, c.syslog);
+    for (files.items) |f| a.free(f.path);
 }
 
 test "config trusted" {
+    var a = std.testing.allocator;
+    const io = std.testing.io;
     var td = std.testing.tmpDir(.{});
     defer td.cleanup();
     const file_data =
@@ -164,16 +161,17 @@ test "config trusted" {
 
     try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
 
-    var a = std.testing.allocator;
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
 
     var c: Config = .{};
-    try c.parse(std.testing.allocator, cfile, undefined);
+    try c.parse(cfile, undefined, a, io);
     try std.testing.expectEqual(true, c.enable_trusted);
 }
 
 test "config untrusted" {
+    var a = std.testing.allocator;
+    const io = std.testing.io;
     var td = std.testing.tmpDir(.{});
     defer td.cleanup();
     const file_data =
@@ -183,15 +181,16 @@ test "config untrusted" {
 
     try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
 
-    var a = std.testing.allocator;
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
     var c: Config = .{};
-    try c.parse(std.testing.allocator, cfile, undefined);
+    try c.parse(cfile, undefined, a, io);
     try std.testing.expectEqual(false, c.enable_trusted);
 }
 
 test "config default" {
+    var a = std.testing.allocator;
+    const io = std.testing.io;
     var td = std.testing.tmpDir(.{});
     defer td.cleanup();
     const file_data =
@@ -201,15 +200,16 @@ test "config default" {
 
     try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
 
-    var a = std.testing.allocator;
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
     var c: Config = .{};
-    try c.parse(std.testing.allocator, cfile, undefined);
+    try c.parse(cfile, undefined, a, io);
     try std.testing.expectEqual(false, c.enable_trusted);
 }
 
 test "parse multi" {
+    var a = std.testing.allocator;
+    const io = std.testing.io;
     var td = std.testing.tmpDir(.{});
     defer td.cleanup();
 
@@ -223,22 +223,21 @@ test "parse multi" {
     const config_data = try std.fmt.bufPrint(&config_buffer, "file = {s}/*.log\n", .{absp});
     try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = config_data });
 
-    var a = std.testing.allocator;
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
 
     var fbuf: [32]LogFile = undefined;
     var files: FileArray = .initBuffer(&fbuf);
     var c: Config = .{};
-    try c.parse(std.testing.allocator, cfile, &files);
+    try c.parse(cfile, &files, a, io);
     try std.testing.expectEqual(@as(usize, 3), files.items.len);
-    for (files.items) |f| std.testing.allocator.free(f.path);
+    for (files.items) |f| a.free(f.path);
 }
 
 const parser = @import("parser.zig");
 const std = @import("std");
+const Io = std.Io;
 const Allocator = std.mem.Allocator;
-const syslog = @import("syslog.zig");
 const bufPrint = std.fmt.bufPrint;
 const LogFile = @import("LogFile.zig");
 const FileArray = std.ArrayListUnmanaged(LogFile);

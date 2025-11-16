@@ -16,7 +16,7 @@ fn usage(arg0: []const u8) noreturn {
         \\    --syslog                          Log ban events to syslog [logger]
         \\    --quiet                           Don't print rules
         \\    --enable-trusted                  Enable auto trusted exemption list
-        \\    --dry-run                         Don't execute rules  
+        \\    --dry-run                         Don't execute rules
     ++ if (builtin.mode == .Debug)
         \\    --debug-rules     <filename>      Print rule and matched hit to <filename> [not yet implemented]
     else
@@ -36,20 +36,28 @@ var c: Config = .{};
 
 var dwb: [256]u8 = undefined;
 var discarding: Writer.Discarding = .init(&dwb);
-var discarding_writer: ?*Writer = &discarding.writer;
+var rule_debug_writer: *Writer = &discarding.writer;
 const builtin = @import("builtin");
 
 fn debug_rule(detection: Detection, hit: []const u8, file: []const u8) !void {
     if (comptime builtin.mode != .Debug) return;
 
-    discarding_writer.print("{s} -> {} [{s}]\n", .{ hit, detection, file });
+    rule_debug_writer.print("{s} -> {} [{s}]\n", .{ hit, detection, file });
 }
 
 pub fn main() !void {
-    const stdout = std.fs.File.stdout();
-
     var debug_a: std.heap.GeneralPurposeAllocator(.{ .safety = true }) = .{};
     const a = debug_a.allocator();
+
+    var threads: Io.Threaded = .init(a);
+    threads.cpu_count = (threads.cpu_count catch 2) | 2;
+    const io = threads.io();
+
+    const stdout_fd = std.fs.File.stdout();
+    var w_b: [0x8000]u8 = undefined;
+    var stdout_w = stdout_fd.writer(&w_b);
+    const stdout = &stdout_w.interface;
+    defer stdout.flush() catch unreachable;
 
     var args = std.process.args();
     const arg0 = args.next() orelse usage("wat?!");
@@ -63,6 +71,7 @@ pub fn main() !void {
             std.debug.print("PANIC: too many log files given\n", .{});
             usage(arg0);
         }
+
         if (startsWith(u8, arg, "--")) {
             if (eql(u8, arg, "--")) {
                 log_files.appendAssumeCapacity(try .initStdin());
@@ -83,7 +92,7 @@ pub fn main() !void {
             } else if (eql(u8, arg, "--enable-trusted")) {
                 c.enable_trusted = true;
             } else if (eql(u8, arg, "--syslog")) {
-                syslog.enabled = true;
+                syslog.enabled = io;
             } else if (eql(u8, arg, "--ban-time")) {
                 const bantime = args.next() orelse usage(arg0);
                 c.validateBantime(bantime) catch usage(arg0);
@@ -92,7 +101,7 @@ pub fn main() !void {
                     std.debug.print("error: --watch requires a filename\n", .{});
                     usage(arg0);
                 };
-                log_files.appendAssumeCapacity(try .init(filename, .follow, null));
+                log_files.appendAssumeCapacity(try .init(filename, .follow, null, io));
             } else if (eql(u8, arg, "--watch-all")) {
                 c.default_watch = .follow;
             } else {
@@ -110,12 +119,16 @@ pub fn main() !void {
                 c.damonize = true;
             }
         } else {
-            log_files.appendAssumeCapacity(try .init(arg, c.default_watch, null));
+            log_files.appendAssumeCapacity(try .init(arg, c.default_watch, null, io));
         }
     }
 
     if (c.config_arg) |ca| {
-        try c.parse(a, ca, &log_files);
+        try c.parse(ca, &log_files, a, io);
+    }
+
+    if (c.syslog) {
+        syslog.enabled = io;
     }
 
     if (log_files.items.len == 0) usage(arg0);
@@ -135,27 +148,26 @@ pub fn main() !void {
     signals.setDefaultMask();
 
     for (log_files.items) |*lf| {
-        lf.initReader();
+        lf.initReader(io);
     }
 
-    try core(a, &log_files, stdout);
+    try core(&log_files, stdout, a, io);
 }
 
-fn core(a: Allocator, src_files: *FileArray, stdout: anytype) !void {
+fn core(src_files: *FileArray, stdout: *Writer, a: Allocator, io: Io) !void {
+    var now = (try Io.Clock.real.now(io)).toSeconds();
     for (src_files.items) |*file| {
         var timer: std.time.Timer = try .start();
-        const line_count = try drainFile(a, file);
+        const line_count = try drainFile(a, file, now);
         const lap = timer.lap();
         if (c.damonize orelse true)
             std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
     }
 
     if (c.exec_rules) {
-        try execBanList(a);
+        try execBanList(a, now);
     } else if (!c.quiet) {
-        var w_b: [0x800]u8 = undefined;
-        var w = stdout.writer(&w_b);
-        try printBanList(a, &w.interface);
+        try printBanList(stdout, a, now);
     }
 
     var watch_list: FileArray = try .initCapacity(a, src_files.items.len);
@@ -163,7 +175,7 @@ fn core(a: Allocator, src_files: *FileArray, stdout: anytype) !void {
     while (src_files.pop()) |file| {
         switch (file.mode) {
             .once, .closed, .stdin => {
-                file.raze();
+                file.raze(io);
             },
             .watch, .follow => {
                 watch_list.appendAssumeCapacity(file);
@@ -172,14 +184,15 @@ fn core(a: Allocator, src_files: *FileArray, stdout: anytype) !void {
     }
 
     while (watch_list.items.len > 0) {
+        now = (try Io.Clock.real.now(io)).toSeconds();
         for (watch_list.items) |*lf| {
             switch (lf.mode) {
                 .closed => continue,
                 .once => @panic("unreachable"),
                 .watch, .follow, .stdin => {
-                    _ = drainFile(a, lf) catch |err| {
+                    _ = drainFile(a, lf, now) catch |err| {
                         std.debug.print("err {}\n", .{err});
-                        lf.raze();
+                        lf.raze(io);
                     };
                 },
             }
@@ -187,22 +200,20 @@ fn core(a: Allocator, src_files: *FileArray, stdout: anytype) !void {
 
         if (ban_list_updated) {
             if (c.exec_rules) {
-                try execBanList(a);
+                try execBanList(a, now);
             } else if (!c.quiet) {
-                var w_b: [0x800]u8 = undefined;
-                var w = stdout.writer(&w_b);
-                try printBanList(a, &w.interface);
+                try printBanList(stdout, a, now);
             }
             ban_list_updated = false;
         }
 
-        if (signals.check(200)) |sig| {
+        if (signals.check(100)) |sig| {
             std.debug.print("signaled {s}\n", .{@tagName(sig)});
             switch (sig) {
                 .hup => {
                     try syslog.log(.{ .signal = .{ .sig = @intFromEnum(sig), .str = "SIGHUP" } });
                     for (watch_list.items) |*lf| {
-                        lf.reInit() catch |err| {
+                        lf.reInit(io) catch |err| {
                             try syslog.log(.{ .err = .{
                                 .err = @errorName(err),
                                 .str = "Unable to restart on file",
@@ -218,102 +229,73 @@ fn core(a: Allocator, src_files: *FileArray, stdout: anytype) !void {
     }
 }
 
-fn genLists(a: Allocator) ![3]ArrayList(u8) {
-    const ts = std.time.timestamp();
-    var banlist_http: ArrayList(u8) = .{};
-    var banlist_mail: ArrayList(u8) = .{};
-    var banlist_sshd: ArrayList(u8) = .{};
+pub const Target = enum {
+    http,
+    mail,
+    sshd,
 
-    errdefer {
-        banlist_http.deinit(a);
-        banlist_mail.deinit(a);
-        banlist_sshd.deinit(a);
-    }
+    pub const items = std.meta.tags(Target);
+};
+
+fn genList(flavor: Target, a: Allocator, ts: i64) ![]u8 {
+    var list: Writer.Allocating = .init(a);
+    errdefer list.deinit();
 
     var vals = baddies.iterator();
     while (vals.next()) |kv| {
         if (ts > kv.value_ptr.banned orelse ts) continue;
-        if (kv.value_ptr.heat.http >= 16) {
-            var w = banlist_http.writer(a);
-            try w.print(", {s}{s}", .{ kv.key_ptr.*, c.bantime });
-        }
-        if (kv.value_ptr.heat.mail >= 16) {
-            var w = banlist_mail.writer(a);
-            try w.print(", {s}{s}", .{ kv.key_ptr.*, c.bantime });
-        }
-        if (kv.value_ptr.heat.sshd >= 16) {
-            var w = banlist_sshd.writer(a);
-            try w.print(", {s}{s}", .{ kv.key_ptr.*, c.bantime });
+        const heat = switch (flavor) {
+            .http => kv.value_ptr.heat.http,
+            .mail => kv.value_ptr.heat.mail,
+            .sshd => kv.value_ptr.heat.sshd,
+        };
+        if (heat >= 16) {
+            try list.writer.print(", {s}{s}", .{ kv.key_ptr.*, c.bantime });
         }
         kv.value_ptr.banned = ts;
     }
 
-    try banlist_http.appendSlice(a, " }");
-    try banlist_mail.appendSlice(a, " }");
-    try banlist_sshd.appendSlice(a, " }");
-    banlist_http.items[0] = '{';
-    banlist_mail.items[0] = '{';
-    banlist_sshd.items[0] = '{';
-
-    return .{
-        banlist_http,
-        banlist_mail,
-        banlist_sshd,
-    };
+    try list.writer.writeAll(" }");
+    list.writer.buffer[0] = '{';
+    return try list.toOwnedSlice();
 }
 
-fn execList(comptime str: []const u8, a: Allocator, items: []const u8) !void {
+fn execList(comptime flavor: Target, a: Allocator, items: []const u8) !void {
     const cmd_base = [_][]const u8{
         "nft", "add", "element", "inet", "filter",
     };
 
     var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
-        "abuse-" ++ str,
+        "abuse-" ++ @tagName(flavor),
         items,
     }, a);
     child.expand_arg0 = .expand;
     if (!c.dryrun) _ = try child.spawnAndWait();
     const count = std.mem.count(u8, items, ", ") + 1;
     try syslog.log(.{
-        .banned = .{ .count = count, .surface = str, .src = items },
+        .banned = .{ .count = count, .surface = @tagName(flavor), .src = items },
     });
 }
 
-fn execBanList(a: Allocator) !void {
-    var http, var mail, var sshd = try genLists(a);
-    defer {
-        http.deinit(a);
-        mail.deinit(a);
-        sshd.deinit(a);
-    }
-
-    if (http.items.len > 4) try execList("http", a, http.items);
-    if (mail.items.len > 4) try execList("mail", a, mail.items);
-    if (sshd.items.len > 4) try execList("sshd", a, sshd.items);
-}
-
-fn printBanList(a: Allocator, stdout: *std.Io.Writer) !void {
-    var http, var mail, var sshd = try genLists(a);
-    defer {
-        http.deinit(a);
-        mail.deinit(a);
-        sshd.deinit(a);
-    }
-
-    if (http.items.len > 2) {
-        try stdout.print("nft add element inet filter abuse-http '{s}'\n", .{http.items[0..]});
-    }
-
-    if (mail.items.len > 2) {
-        try stdout.print("nft add element inet filter abuse-mail '{s}'\n", .{mail.items[0..]});
-    }
-
-    if (sshd.items.len > 2) {
-        try stdout.print("nft add element inet filter abuse-sshd '{s}'\n", .{sshd.items[0..]});
+fn execBanList(a: Allocator, now: i64) !void {
+    inline for (Target.items) |flavor| {
+        var list = try genList(flavor, a, now);
+        defer a.free(list);
+        if (list.len > 4) try execList(flavor, a, list);
     }
 }
 
-fn drainFile(a: Allocator, logfile: *LogFile) !usize {
+fn printBanList(stdout: *Writer, a: Allocator, now: i64) !void {
+    inline for (Target.items) |flavor| {
+        var list = try genList(flavor, a, now);
+        defer a.free(list);
+        if (list.len > 2) {
+            try stdout.print("nft add element inet filter abuse-" ++ @tagName(flavor) ++ " '{s}'\n", .{list});
+        }
+    }
+}
+
+fn drainFile(a: Allocator, logfile: *LogFile, now: i64) !usize {
     var line_count: usize = 0;
     while (try logfile.line()) |line| {
         line_count += 1;
@@ -335,7 +317,7 @@ fn drainFile(a: Allocator, logfile: *LogFile) !usize {
                     gop.value_ptr.* = .{};
                 }
                 if (gop.value_ptr.banned) |banned| {
-                    if (banned < std.time.timestamp() - 3) gop.value_ptr.banned = null;
+                    if (banned < now - 3) gop.value_ptr.banned = null;
                 }
                 switch (abuse.format) {
                     .dovecot => {
@@ -615,11 +597,11 @@ const syslog = @import("syslog.zig");
 const parser = @import("parser.zig");
 const Event = @import("Event.zig");
 const Detection = @import("Detection.zig");
-//const Actionable = @import("Actionable.zig");
 const LogFile = @import("LogFile.zig");
 const net = @import("net.zig");
 
 const std = @import("std");
+const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayListUnmanaged;
 const FileArray = ArrayList(LogFile);
