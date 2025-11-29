@@ -123,14 +123,8 @@ pub fn main() !void {
         }
     }
 
-    if (c.config_arg) |ca| {
-        try c.parse(ca, &log_files, a, io);
-    }
-
-    if (c.syslog) {
-        syslog.enabled = io;
-    }
-
+    if (c.config_arg) |ca| try c.parse(ca, &log_files, a, io);
+    if (c.syslog) syslog.enabled = io;
     if (log_files.items.len == 0) usage(arg0);
 
     if (c.damonize != null and c.damonize.?) {
@@ -147,9 +141,7 @@ pub fn main() !void {
     }
     signals.setDefaultMask();
 
-    for (log_files.items) |*lf| {
-        lf.initReader(io);
-    }
+    for (log_files.items) |*lf| lf.initReader(io);
 
     try core(&log_files, stdout, a, io);
 }
