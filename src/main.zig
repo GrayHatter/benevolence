@@ -37,7 +37,6 @@ var c: Config = .{};
 var dwb: [256]u8 = undefined;
 var discarding: Writer.Discarding = .init(&dwb);
 var rule_debug_writer: *Writer = &discarding.writer;
-const builtin = @import("builtin");
 
 fn debug_rule(detection: Detection, hit: []const u8, file: []const u8) !void {
     if (comptime builtin.mode != .Debug) return;
@@ -50,7 +49,7 @@ pub fn main() !void {
     const a = debug_a.allocator();
 
     var threads: Io.Threaded = .init(a);
-    threads.cpu_count = (threads.cpu_count catch 2) | 2;
+    threads.async_limit = .limited(2 | (threads.async_limit.toInt() orelse 2));
     const io = threads.io();
 
     const stdout_fd = std.fs.File.stdout();
@@ -601,3 +600,4 @@ const Writer = std.Io.Writer;
 const indexOf = std.mem.indexOf;
 const startsWith = std.mem.startsWith;
 const eql = std.mem.eql;
+const builtin = @import("builtin");

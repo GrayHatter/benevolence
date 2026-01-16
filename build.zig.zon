@@ -2,7 +2,7 @@
     .name = .benevolence,
     .version = "0.0.0",
     .fingerprint = 0x4f3a2bb2cd14b745,
-    .minimum_zig_version = "0.16.0-dev.1220",
+    .minimum_zig_version = "0.16.0-dev.1484+d0ba6642b",
     .dependencies = .{},
     .paths = .{
         "build.zig",
