@@ -1,6 +1,6 @@
 var arg0: []const u8 = "wat?!";
 var dbfile: []const u8 = "./asn_cache.db";
-var host: []const u8 = "api.gr.ht"; // this was never valid
+var host: []const u8 = "localhost"; // this was never valid
 
 pub fn main() !void {
     var debug_a: std.heap.GeneralPurposeAllocator(.{ .safety = true }) = .{};
