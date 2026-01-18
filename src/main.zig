@@ -29,7 +29,7 @@ fn usage(arg0: []const u8) noreturn {
             \\    --ban-time        <timeout>       Default time to ban a host [504h]
             \\
     , .{arg0});
-    std.posix.exit(1);
+    std.process.exit(1);
 }
 
 var c: Config = .{};
@@ -44,21 +44,17 @@ fn debug_rule(detection: Detection, hit: []const u8, file: []const u8) !void {
     rule_debug_writer.print("{s} -> {} [{s}]\n", .{ hit, detection, file });
 }
 
-pub fn main() !void {
-    var debug_a: std.heap.GeneralPurposeAllocator(.{ .safety = true }) = .{};
-    const a = debug_a.allocator();
+pub fn main(init: std.process.Init) !void {
+    const a = init.gpa;
+    const io = init.io;
 
-    var threads: Io.Threaded = .init(a);
-    threads.async_limit = .limited(2 | (threads.async_limit.toInt() orelse 2));
-    const io = threads.io();
-
-    const stdout_fd = std.fs.File.stdout();
+    const stdout_fd = std.Io.File.stdout();
     var w_b: [0x8000]u8 = undefined;
-    var stdout_w = stdout_fd.writer(&w_b);
+    var stdout_w = stdout_fd.writer(io, &w_b);
     const stdout = &stdout_w.interface;
     defer stdout.flush() catch unreachable;
 
-    var args = std.process.args();
+    var args = init.minimal.args.iterate();
     const arg0 = args.next() orelse usage("wat?!");
 
     // This is a bug
@@ -129,13 +125,15 @@ pub fn main() !void {
     if (c.damonize != null and c.damonize.?) {
         const pid_file = c.pid_file orelse "/run/benevolence.pid";
         errdefer std.posix.exit(9);
-        const pid = try std.posix.fork();
+        const pid = std.os.linux.fork();
         if (pid > 0) {
-            var f = try std.fs.cwd().createFile(pid_file, .{});
-            var w = f.writer(&.{});
-            try w.interface.print("{}\n", .{pid});
-            f.close();
-            std.posix.exit(0);
+            defer comptime unreachable;
+            if (std.Io.Dir.cwd().createFile(io, pid_file, .{})) |f| {
+                var w = f.writer(io, &.{});
+                w.interface.print("{}\n", .{pid}) catch {};
+                f.close(io);
+            } else |_| {}
+            std.process.exit(0);
         }
     }
     signals.setDefaultMask();
@@ -156,7 +154,7 @@ fn core(src_files: *FileArray, stdout: *Writer, a: Allocator, io: Io) !void {
     }
 
     if (c.exec_rules) {
-        try execBanList(a, now);
+        try execBanList(a, io, now);
     } else if (!c.quiet) {
         try printBanList(stdout, a, now);
     }
@@ -191,7 +189,7 @@ fn core(src_files: *FileArray, stdout: *Writer, a: Allocator, io: Io) !void {
 
         if (ban_list_updated) {
             if (c.exec_rules) {
-                try execBanList(a, now);
+                try execBanList(a, io, now);
             } else if (!c.quiet) {
                 try printBanList(stdout, a, now);
             }
@@ -251,28 +249,26 @@ fn genList(flavor: Target, a: Allocator, ts: i64) ![]u8 {
     return try list.toOwnedSlice();
 }
 
-fn execList(comptime flavor: Target, a: Allocator, items: []const u8) !void {
+fn execList(comptime flavor: Target, items: []const u8, a: Allocator, io: Io) !void {
     const cmd_base = [_][]const u8{
         "nft", "add", "element", "inet", "filter",
     };
 
-    var child: std.process.Child = .init(&cmd_base ++ [2][]const u8{
-        "abuse-" ++ @tagName(flavor),
-        items,
-    }, a);
-    child.expand_arg0 = .expand;
-    if (!c.dryrun) _ = try child.spawnAndWait();
+    if (!c.dryrun) _ = try std.process.run(a, io, .{
+        .argv = &cmd_base ++ [2][]const u8{ "abuse-" ++ @tagName(flavor), items },
+        .expand_arg0 = .expand,
+    });
     const count = std.mem.count(u8, items, ", ") + 1;
     try syslog.log(.{
         .banned = .{ .count = count, .surface = @tagName(flavor), .src = items },
     });
 }
 
-fn execBanList(a: Allocator, now: i64) !void {
+fn execBanList(a: Allocator, io: Io, now: i64) !void {
     inline for (Target.items) |flavor| {
         var list = try genList(flavor, a, now);
         defer a.free(list);
-        if (list.len > 4) try execList(flavor, a, list);
+        if (list.len > 4) try execList(flavor, list, a, io);
     }
 }
 

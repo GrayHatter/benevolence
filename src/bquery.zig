@@ -1,26 +1,24 @@
 var arg0: []const u8 = "wat?!";
-var dbfile: []const u8 = "./asn_cache.db";
+var dbfilename: []const u8 = "./asn_cache.db";
 var host: []const u8 = "localhost"; // this was never valid
 
-pub fn main() !void {
-    var debug_a: std.heap.GeneralPurposeAllocator(.{ .safety = true }) = .{};
-    const a = debug_a.allocator();
-    var threaded: std.Io.Threaded = .init_single_threaded;
-    const io = threaded.io();
+pub fn main(init: std.process.Init) !void {
+    const a = init.gpa;
+    const io = init.io;
 
-    const stdout_fd = std.fs.File.stdout();
+    const stdout_fd = std.Io.File.stdout();
     var stdout_b: [2048]u8 = undefined;
-    var stdout_w = stdout_fd.writer(&stdout_b);
+    var stdout_w = stdout_fd.writer(io, &stdout_b);
     const stdout = &stdout_w.interface;
     defer stdout.flush() catch unreachable;
-    const stderr_fd = std.fs.File.stderr();
+    const stderr_fd = std.Io.File.stderr();
     var stderr_b: [2048]u8 = undefined;
-    var stderr_w = stderr_fd.writer(&stderr_b);
+    var stderr_w = stderr_fd.writer(io, &stderr_b);
     const stderr = &stderr_w.interface;
     defer stderr.flush() catch unreachable;
 
     // This is a bug
-    var args = std.process.args();
+    var args = init.minimal.args.iterate();
     arg0 = args.next() orelse usage("invocation error: no arg0? how'd you do that?!", stdout);
 
     var to_search_b: [50][]const u8 = undefined;
@@ -32,7 +30,7 @@ pub fn main() !void {
         } else if (eql(u8, arg, "--help")) {
             usage("help", stdout);
         } else if (eql(u8, arg, "--db")) {
-            dbfile = args.next() orelse usage("--db used without filename", stderr);
+            dbfilename = args.next() orelse usage("--db used without filename", stderr);
         } else if (eql(u8, arg, "--host")) {
             host = args.next() orelse usage("--host used without hostname", stderr);
         } else {
@@ -40,7 +38,20 @@ pub fn main() !void {
         }
     }
 
-    for (to_search_list.items) |asn| {
+    var db_fd: std.Io.File = std.Io.Dir.cwd().createFile(io, dbfilename, .{
+        .read = true,
+        .truncate = false,
+    }) catch usage("unable to open db file", stderr);
+    defer db_fd.close(io);
+    var dbf_b: [4096]u8 = undefined;
+    var db_writer = db_fd.writer(io, &dbf_b);
+    var db_w = &db_writer.interface;
+    try db_writer.seekTo(try db_fd.length(io));
+    defer db_w.flush() catch unreachable;
+
+    for (to_search_list.items) |asn_str| {
+        const asn = ASN.parse(asn_str) catch continue;
+
         const net_list: []const u8 = fetchNetList(asn, a, io) catch |err| {
             log.err("net list fetch error {}", .{err});
             continue;
@@ -52,9 +63,33 @@ pub fn main() !void {
             continue;
         };
 
-        _ = whois;
+        for (whois) |who| {
+            try db_w.print("{s} {f} {s}\n", .{ who.Prefix, asn, who.Org orelse "no org found" });
+        }
     }
 }
+
+const ASN = enum(usize) {
+    _,
+
+    fn parse(str: []const u8) !ASN {
+        if (str.len == 0)
+            return error.NoASN;
+        const strim = trim(u8, str, &std.ascii.whitespace);
+        const raw = cutPrefix(u8, strim, "AS") orelse strim;
+        const num: usize = std.fmt.parseInt(usize, raw, 10) catch return error.ParseError;
+        return @enumFromInt(num);
+    }
+
+    pub fn format(asn: ASN, w: *Writer) !void {
+        try w.print("AS{}", .{@intFromEnum(asn)});
+    }
+
+    test parse {
+        const asn = try parse("AS1337");
+        try std.testing.expectEqual(@as(ASN, @enumFromInt(1337)), asn);
+    }
+};
 
 const NetList = struct {
     Prefix: []const u8,
@@ -64,9 +99,9 @@ const NetList = struct {
     const Json = struct { prefixes: []NetList };
 };
 
-fn fetchNetList(asn: []const u8, a: Allocator, io: Io) ![]const u8 {
+fn fetchNetList(asn: ASN, a: Allocator, io: Io) ![]const u8 {
     var path_b: [500]u8 = undefined;
-    const path = try std.fmt.bufPrint(&path_b, "/super-lg/report/api/v1/prefixes/originated/{s}", .{asn});
+    const path = try std.fmt.bufPrint(&path_b, "/super-lg/report/api/v1/prefixes/originated/{}", .{@intFromEnum(asn)});
     const uri: std.Uri = .{
         .scheme = "https",
         .host = .{ .percent_encoded = host },
@@ -126,7 +161,7 @@ fn fetchWhois(netlist: []const u8, a: Allocator, io: Io) ![]Whois {
     };
     const blob = try fetchPayload(uri, netlist, a, io);
     const json = try std.json.parseFromSlice(Whois.Json, a, blob, .{ .ignore_unknown_fields = true });
-    defer json.deinit();
+    //defer json.deinit();
     for (json.value.response) |val| {
         log.err("{f}", .{val});
     }
@@ -166,7 +201,11 @@ fn usage(comptime errstr: ?[]const u8, w: *Writer) noreturn {
         \\
     ;
     w.print(string, .{arg0}) catch unreachable;
-    std.posix.exit(1);
+    std.process.exit(1);
+}
+
+test "bquery" {
+    _ = std.testing.refAllDecls(@This());
 }
 
 const std = @import("std");
@@ -178,4 +217,6 @@ const log = std.log;
 const indexOf = std.mem.indexOf;
 const startsWith = std.mem.startsWith;
 const eql = std.mem.eql;
+const cutPrefix = std.mem.cutPrefix;
+const trim = std.mem.trim;
 const builtin = @import("builtin");

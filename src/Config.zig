@@ -31,7 +31,7 @@ pub fn parse(c: *Config, fname: []const u8, files: *FileArray, a: Allocator, io:
     const fd = Io.Dir.cwd().openFile(io, fname, .{}) catch |err| switch (err) {
         error.FileNotFound => {
             std.debug.print("Error config file missing {s}\n", .{fname});
-            std.posix.exit(1);
+            std.process.exit(1);
         },
         else => return err,
     };
@@ -93,13 +93,12 @@ fn parseLineFile(log_files: *FileArray, format: ?parser.Format, arg: []const u8,
         const postfix = arg[i + 1 ..];
         if (postfix.len > 0 and postfix[0] == '*') return error.NotImplemented;
         if (prefix[prefix.len - 1] != '/') return error.NotImplemented;
-        const stat = try std.fs.cwd().statFile(prefix);
+        const stat = try std.Io.Dir.cwd().statFile(io, prefix, .{});
         if (stat.kind != .directory) return error.NotADir;
         var dir = try Io.Dir.cwd().openDir(io, prefix, .{ .iterate = true });
         defer dir.close(io);
-        var old: std.fs.Dir = .adaptFromNewApi(dir);
-        var itr = old.iterate();
-        while (try itr.next()) |subp| {
+        var itr = dir.iterate();
+        while (try itr.next(io)) |subp| {
             if (subp.kind != .file) continue;
             if (!endsWith(u8, subp.name, postfix)) continue;
             const fname = try std.fmt.allocPrint(a, "{s}{s}", .{ prefix, subp.name });
@@ -133,7 +132,7 @@ test parse {
         \\
     ;
 
-    try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
+    try td.dir.writeFile(io, .{ .sub_path = "benv.conf", .data = file_data });
 
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
@@ -159,7 +158,7 @@ test "config trusted" {
         \\
     ;
 
-    try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
+    try td.dir.writeFile(io, .{ .sub_path = "benv.conf", .data = file_data });
 
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
@@ -179,7 +178,7 @@ test "config untrusted" {
         \\
     ;
 
-    try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
+    try td.dir.writeFile(io, .{ .sub_path = "benv.conf", .data = file_data });
 
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
@@ -198,7 +197,7 @@ test "config default" {
         \\
     ;
 
-    try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = file_data });
+    try td.dir.writeFile(io, .{ .sub_path = "benv.conf", .data = file_data });
 
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
@@ -214,14 +213,14 @@ test "parse multi" {
     defer td.cleanup();
 
     inline for (.{ "first", "second.log", "third.log", "forth.log" }) |fname| {
-        try td.dir.writeFile(.{ .sub_path = fname, .data = "" });
+        try td.dir.writeFile(io, .{ .sub_path = fname, .data = "" });
     }
 
     var abs_buffer: [2048]u8 = undefined;
-    const absp = try td.dir.realpath(".", &abs_buffer);
+    const ab_len = try td.dir.realPath(io, &abs_buffer);
     var config_buffer: [2048]u8 = undefined;
-    const config_data = try std.fmt.bufPrint(&config_buffer, "file = {s}/*.log\n", .{absp});
-    try td.dir.writeFile(.{ .sub_path = "benv.conf", .data = config_data });
+    const config_data = try std.fmt.bufPrint(&config_buffer, "file = {s}/*.log\n", .{abs_buffer[0..ab_len]});
+    try td.dir.writeFile(io, .{ .sub_path = "benv.conf", .data = config_data });
 
     const cfile = try std.mem.join(a, "/", &[3][]const u8{ ".zig-cache/tmp", &td.sub_path, "benv.conf" });
     defer a.free(cfile);
