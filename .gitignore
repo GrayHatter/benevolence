@@ -3,4 +3,5 @@ zig-out/*
 data/*
 
 config.ini
-
+asn_cache.db
+src/test-data.zig
