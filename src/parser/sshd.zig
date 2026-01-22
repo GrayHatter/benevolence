@@ -16,7 +16,7 @@ pub fn parseAddr(line: []const u8) !Addr {
         return try Addr.parse(line[i + 16 ..]);
     }
     // Connection closed by invalid user ecoub 127.0.0.1 port 48556 [preauth]
-    if (indexOfPrefix(line, 0, "Connection closed by invalid user ")) |i_| {
+    if (findPrefix(line, 0, "Connection closed by invalid user ")) |i_| {
         var i: usize = i_;
         while (i < line.len and line[i] != ' ') : (i += 1) {}
         i += 1;
@@ -32,8 +32,8 @@ pub fn parseAddr(line: []const u8) !Addr {
         }
     }
     //Invalid user ktabn from 127.0.0.1 port 55394
-    if (indexOfPrefix(line, 0, "Invalid user ")) |i| {
-        if (indexOfPrefix(line, i, " from ")) |start| {
+    if (findPrefix(line, 0, "Invalid user ")) |i| {
+        if (findPrefix(line, i, " from ")) |start| {
             if (indexOfPos(u8, line, start, " port ")) |end| {
                 return try Addr.parse(line[start..end]);
             }
@@ -41,8 +41,8 @@ pub fn parseAddr(line: []const u8) !Addr {
     }
 
     //Accepted publickey for grayhatter from 127.0.0.1 port 53142
-    if (indexOfPrefix(line, 0, "]: Accepted publickey for ")) |i| {
-        if (indexOfPrefix(line, i, " from ")) |start| {
+    if (findPrefix(line, 0, "]: Accepted publickey for ")) |i| {
+        if (findPrefix(line, i, " from ")) |start| {
             if (indexOfPos(u8, line, start, " port ")) |end| {
                 return try Addr.parse(line[start..end]);
             }
@@ -73,7 +73,7 @@ pub fn parseLine(line: []const u8) !?Event {
 const std = @import("std");
 const indexOfPos = std.mem.indexOfPos;
 const parser = @import("../parser.zig");
-const indexOfPrefix = parser.indexOfPrefix;
+const findPrefix = parser.findPrefix;
 const Addr = @import("../main.zig").Addr;
 const Event = @import("../Event.zig");
 const Detection = @import("../Detection.zig");

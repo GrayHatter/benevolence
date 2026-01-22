@@ -529,6 +529,14 @@ test parseLine {
                 "unknown[162.218.52.165]: 450 4.7.1 Client host rejected: cannot find your reverse hostname," ++
                 " [162.218.52.165]; from=<bounce@jantool.org> to=<banned_email@gr.ht> proto=ESMTP helo=<mail1.jantool.org>",
         } },
+        .{ .abuse = .{
+            .rule = parser.postfix.rules[8].prefix.?[0],
+            .format = .postfix,
+            .line = "Jan 22 18:09:09 gr mail.info postfix/smtps/smtpd[4226]: SSL_accept error from 45-79-152-14.ip" ++
+                ".linodeusercontent.com[45.79.152.14]: -1",
+        } },
+
+        // trusted
         .{ .trusted = .{
             .rule = parser.sshd.trusted_rules[0],
             .format = .sshd,
@@ -546,6 +554,7 @@ test parseLine {
         .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 64, 105, 146 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 80, 51, 181, 144 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 162, 218, 52, 165 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 45, 79, 152, 14 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 127, 42, 0, 69 } }, .timestamp = 0, .extra = "" },
     };
 

@@ -10,6 +10,9 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "Client host rejected: cannot find your reverse hostname", .prefix = &.{
         .{ .hit = " to=<banned_email@gr.ht>", .heat = 16, .ban_time = 3600 * 2 },
     }, .heat = 0, .ban_time = 0 },
+    .{ .hit = "SSL_accept error from ", .prefix = &.{
+        .{ .hit = "-1", .heat = 32, .ban_time = 10 },
+    }, .heat = 2, .ban_time = 3600 },
 };
 
 pub const trusted_rules: []const Detection = &.{};
@@ -17,20 +20,24 @@ pub const trusted_rules: []const Detection = &.{};
 const default: u32 = 14 * 86400;
 
 pub fn filter(line: []const u8) bool {
-    if (indexOf(u8, line, " mail.")) |i|
+    if (find(u8, line, " mail.")) |i|
         return (startsWith(u8, line[i + 6 ..], "warn postfix/") or
             startsWith(u8, line[i + 6 ..], "info postfix/"));
     return false;
 }
 
 pub fn parseAddr(line: []const u8) !Addr {
-    if (indexOf(u8, line, "]: SASL PLAIN") orelse indexOf(u8, line, "]: SASL LOGIN")) |j| {
-        if (lastIndexOf(u8, line[0..j], "[")) |i| {
+    if (find(u8, line, "]: SASL PLAIN") orelse find(u8, line, "]: SASL LOGIN")) |j| {
+        if (findLast(u8, line[0..j], "[")) |i| {
             return try Addr.parse(line[i + 1 .. j]);
         }
-    } else if (indexOfPrefix(line, 0, " from unknown[")) |i| {
-        if (indexOfScalarPos(u8, line, i, ']')) |j| {
+    } else if (findPrefix(line, 0, " from unknown[")) |i| {
+        if (findScalarPos(u8, line, i, ']')) |j| {
             return try Addr.parse(line[i..j]);
+        }
+    } else if (cutSuffix(u8, line, "]: -1")) |cut| {
+        if (findScalarLast(u8, cut, '[')) |i| {
+            return try Addr.parse(cut[i + 1 ..]);
         }
     }
     return error.AddrNotFound;
@@ -55,12 +62,14 @@ pub fn parseLine(line: []const u8) !?Event {
 }
 
 const std = @import("std");
-const indexOf = std.mem.indexOf;
-const lastIndexOf = std.mem.lastIndexOf;
-const indexOfScalarPos = std.mem.indexOfScalarPos;
+const find = std.mem.find;
+const findLast = std.mem.findLast;
+const findScalarLast = std.mem.findScalarLast;
+const findScalarPos = std.mem.findScalarPos;
 const startsWith = std.mem.startsWith;
+const cutSuffix = std.mem.cutSuffix;
 const parser = @import("../parser.zig");
-const indexOfPrefix = parser.indexOfPrefix;
+const findPrefix = parser.findPrefix;
 const Addr = @import("../main.zig").Addr;
 const Event = @import("../Event.zig");
 const Detection = @import("../Detection.zig");

@@ -30,16 +30,16 @@ pub const Bound = struct {
     index: usize,
 };
 
-pub fn indexOfPrefix(line: []const u8, skip: usize, search: []const u8) ?usize {
-    if (indexOfPos(u8, line, skip, search)) |i| {
+pub fn findPrefix(line: []const u8, skip: usize, search: []const u8) ?usize {
+    if (findPos(u8, line, skip, search)) |i| {
         return i + search.len;
     }
     return null;
 }
 
 pub fn boundedSearchRev(comptime pre: []const u8, comptime post: []const u8, line: []const u8) ?Bound {
-    if (std.mem.indexOfPos(u8, line, post)) |j| {
-        if (std.mem.lastIndexOf(u8, line[0..j], pre)) |i| {
+    if (findPos(u8, line, post)) |j| {
+        if (findLast(u8, line[0..j], pre)) |i| {
             return .{ .str = line[i + pre.len .. j], .index = i + pre.len };
         }
     }
@@ -84,4 +84,5 @@ test parseTimeSyslog {
 
 const std = @import("std");
 const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
-const indexOfPos = std.mem.indexOfPos;
+const findPos = std.mem.findPos;
+const findLast = std.mem.findLast;
