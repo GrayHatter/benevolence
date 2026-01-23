@@ -45,7 +45,8 @@ fn debug_rule(detection: Detection, hit: []const u8, file: []const u8) !void {
 }
 
 pub fn main(init: std.process.Init) !void {
-    const a = init.gpa;
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    const a = gpa.allocator();
     const io = init.io;
 
     const stdout_fd = std.Io.File.stdout();
@@ -60,6 +61,7 @@ pub fn main(init: std.process.Init) !void {
     // This is a bug
     const args_file_limit = 20;
     var log_files: FileArray = try .initCapacity(a, args_file_limit);
+    defer log_files.deinit(a);
 
     while (args.next()) |arg| {
         if (log_files.items.len >= args_file_limit) {
@@ -160,6 +162,7 @@ fn core(src_files: *FileArray, stdout: *Writer, a: Allocator, io: Io) !void {
     }
 
     var watch_list: FileArray = try .initCapacity(a, src_files.items.len);
+    defer watch_list.deinit(a);
 
     while (src_files.pop()) |file| {
         switch (file.mode) {
@@ -543,6 +546,12 @@ test parseLine {
             .line = "Jan 22 18:09:09 gr mail.info postfix/smtps/smtpd[4226]: SSL_accept error from 45-79-152-14.ip" ++
                 ".linodeusercontent.com[45.79.152.14]: -1",
         } },
+        .{ .abuse = .{
+            .rule = parser.postfix.rules[8].prefix.?[0],
+            .format = .postfix,
+            .line = "Jan 23 18:55:55 gr mail.info postfix/smtps/smtpd[8597]: SSL_accept error from " ++
+                "prod-beryllium-nyc1-56.do.binaryedge.ninja[159.223.112.120]: -1",
+        } },
 
         // trusted
         .{ .trusted = .{
@@ -564,6 +573,7 @@ test parseLine {
         .{ .src_addr = .{ .ipv4 = [4]u8{ 80, 51, 181, 144 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 162, 218, 52, 165 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 45, 79, 152, 14 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 159, 223, 112, 120 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 127, 42, 0, 69 } }, .timestamp = 0, .extra = "" },
     };
 

@@ -47,7 +47,7 @@ pub fn initStdin() !LogFile {
         .file = in,
         .reader = undefined,
         .size = 0,
-        .mode = .watch,
+        .mode = .stdin,
         .only = null,
     };
 }
@@ -73,15 +73,7 @@ pub fn raze(lf: LogFile, io: Io) void {
 }
 
 pub fn line(lf: *LogFile) !?[]const u8 {
-    if (lf.mode == .stdin) {
-        var pollfd: [1]std.os.linux.pollfd = .{.{
-            .fd = lf.file.handle,
-            .events = std.posix.POLL.IN,
-            .revents = 0,
-        }};
-        if (std.os.linux.poll(&pollfd, 1, 0) != 1) return null;
-    }
-    return lf.reader.interface.takeDelimiterInclusive('\n') catch |err| switch (err) {
+    return lf.reader.interface.takeSentinel('\n') catch |err| switch (err) {
         error.EndOfStream => {
             // lf.checkAndRefollow();
             return null;
