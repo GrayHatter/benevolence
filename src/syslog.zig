@@ -1,4 +1,4 @@
-pub var enabled: ?Io = null;
+pub var enabled: bool = true;
 
 const Event = union(enum) {
     banned: Banned,
@@ -98,25 +98,20 @@ pub const Priority = packed struct(u8) {
     }
 };
 
-pub fn log(evt: Event) !void {
-    const io = enabled orelse return;
-
+pub fn log(evt: Event, io: Io) !void {
+    if (!enabled) return;
     const tag: []const u8 = "benevolence";
     const pid = std.os.linux.getpid();
-    //var b: [0x2ff]u8 = undefined;
-    //var buffer: Writer = .fixed(&b);
-    //var w = buffer.fixedWriter();
 
-    //var addr: sockaddr_unix = .{ .family = std.posix.AF.UNIX, .path = @splat(0) };
-    //@memcpy(addr.path[0..8], "/dev/log");
-    //const addr_len: u32 = @sizeOf(std.posix.sockaddr.un);
-    //const s = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.DGRAM, 0);
-    //try std.posix.connect(s, @ptrCast(&addr), addr_len);
-    //defer std.posix.close(s);
-    var dev_log: Io.net.UnixAddress = try .init("/dev/log");
-    var s = try dev_log.connect(io);
+    var addr: sockaddr_unix = .{ .family = std.posix.AF.UNIX, .path = @splat(0) };
+    @memcpy(addr.path[0..8], "/dev/log");
+    const addr_len: u32 = @sizeOf(std.posix.sockaddr.un);
+    const socket: i32 = @intCast(std.posix.system.socket(std.posix.AF.UNIX, std.posix.SOCK.DGRAM, 0));
+    if (std.posix.system.connect(socket, @ptrCast(&addr), addr_len) != 0) return;
+    defer std.posix.close(socket);
+    var stream: Io.net.Stream = .{ .socket = .{ .handle = socket, .address = .{ .ip4 = .loopback(0) } } };
     var w_b: [0x2ff]u8 = undefined;
-    var writer = s.writer(io, &w_b);
+    var writer = stream.writer(io, &w_b);
     const w = &writer.interface;
 
     const sp_str = "<{f}>{s}[{}]: ";

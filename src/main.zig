@@ -87,7 +87,7 @@ pub fn main(init: std.process.Init) !void {
             } else if (eql(u8, arg, "--enable-trusted")) {
                 c.enable_trusted = true;
             } else if (eql(u8, arg, "--syslog")) {
-                syslog.enabled = io;
+                syslog.enabled = true;
             } else if (eql(u8, arg, "--ban-time")) {
                 const bantime = args.next() orelse usage(arg0);
                 c.validateBantime(bantime) catch usage(arg0);
@@ -119,7 +119,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     if (c.config_arg) |ca| try c.parse(ca, &log_files, a, io);
-    if (c.syslog) syslog.enabled = io;
+    if (c.syslog) syslog.enabled = true;
     if (log_files.items.len == 0) usage(arg0);
 
     if (c.damonize != null and c.damonize.?) {
@@ -147,7 +147,7 @@ fn core(src_files: *FileArray, stdout: *Writer, a: Allocator, io: Io) !void {
     var now = (try Io.Clock.real.now(io)).toSeconds();
     for (src_files.items) |*file| {
         var timer: std.time.Timer = try .start();
-        const line_count = try drainFile(a, file, now);
+        const line_count = try drainFile(a, file, now, io);
         const lap = timer.lap();
         if (c.damonize orelse true)
             std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
@@ -179,7 +179,7 @@ fn core(src_files: *FileArray, stdout: *Writer, a: Allocator, io: Io) !void {
                 .closed => continue,
                 .once => @panic("unreachable"),
                 .watch, .follow, .stdin => {
-                    _ = drainFile(a, lf, now) catch |err| {
+                    _ = drainFile(a, lf, now, io) catch |err| {
                         std.debug.print("err {}\n", .{err});
                         lf.raze(io);
                     };
@@ -200,14 +200,14 @@ fn core(src_files: *FileArray, stdout: *Writer, a: Allocator, io: Io) !void {
             std.debug.print("signaled {s}\n", .{@tagName(sig)});
             switch (sig) {
                 .hup => {
-                    try syslog.log(.{ .signal = .{ .sig = @intFromEnum(sig), .str = "SIGHUP" } });
+                    try syslog.log(.{ .signal = .{ .sig = @intFromEnum(sig), .str = "SIGHUP" } }, io);
                     for (watch_list.items) |*lf| {
                         lf.reInit(io) catch |err| {
                             try syslog.log(.{ .err = .{
                                 .err = @errorName(err),
                                 .str = "Unable to restart on file",
                                 .file = lf.path,
-                            } });
+                            } }, io);
                         };
                     }
                 },
@@ -261,7 +261,7 @@ fn execList(comptime flavor: Target, items: []const u8, a: Allocator, io: Io) !v
     const count = std.mem.count(u8, items, ", ") + 1;
     try syslog.log(.{
         .banned = .{ .count = count, .surface = @tagName(flavor), .src = items },
-    });
+    }, io);
 }
 
 fn execBanList(a: Allocator, io: Io, now: i64) !void {
@@ -282,7 +282,7 @@ fn printBanList(stdout: *Writer, a: Allocator, now: i64) !void {
     }
 }
 
-fn drainFile(a: Allocator, logfile: *LogFile, now: i64) !usize {
+fn drainFile(a: Allocator, logfile: *LogFile, now: i64, io: Io) !usize {
     var line_count: usize = 0;
     while (try logfile.line()) |line| {
         line_count += 1;
@@ -293,7 +293,7 @@ fn drainFile(a: Allocator, logfile: *LogFile, now: i64) !usize {
                 var b: [0xff]u8 = undefined;
                 const paddr = try std.fmt.bufPrint(&b, "{f}", .{event.src_addr});
                 if (trusted_addrs.contains(paddr)) {
-                    try syslog.log(.{ .trustedabuse = .{ .addr = paddr } });
+                    try syslog.log(.{ .trustedabuse = .{ .addr = paddr } }, io);
                     continue;
                 }
 
@@ -333,7 +333,7 @@ fn drainFile(a: Allocator, logfile: *LogFile, now: i64) !usize {
                 const paddr = try std.fmt.bufPrint(&b, "{f}", .{event.src_addr});
                 const gop = try trusted_addrs.getOrPut(a, paddr);
                 if (!gop.found_existing) {
-                    try syslog.log(.{ .trusted = .{ .addr = paddr } });
+                    try syslog.log(.{ .trusted = .{ .addr = paddr } }, io);
                     gop.key_ptr.* = try a.dupe(u8, paddr);
                 }
             },
