@@ -510,6 +510,14 @@ test parseLine {
                 "like Gecko) Chrome/91.0.4472.124 Safari/537.36\" \"-\"",
         } },
         .{ .abuse = .{
+            .rule = parser.nginx.rules[4],
+            .format = .nginx,
+            .line = "68.183.75.104 - - [17/Jan/2026:17:31:37 +0000] \"PROPFIND / HTTP/1.1\" 502 552 " ++
+                "\"http://144.126.209.12:444/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" ++
+                " (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\"",
+        } },
+
+        .{ .abuse = .{
             .rule = parser.sshd.rules[0],
             .format = .sshd,
             .line = "May 29 15:21:53 gr auth.info sshd-session[25292]: Connection closed by " ++
@@ -551,6 +559,7 @@ test parseLine {
         .{ .src_addr = .{ .ipv4 = [4]u8{ 77, 90, 185, 6 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 149, 255, 62, 135 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 185, 177, 72, 104 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 68, 183, 75, 104 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 64, 105, 146 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 80, 51, 181, 144 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 162, 218, 52, 165 } }, .timestamp = 0, .extra = "" },
