@@ -13,6 +13,15 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "SSL_accept error from ", .prefix = &.{
         .{ .hit = "-1", .heat = 32, .ban_time = 10 },
     }, .heat = 2, .ban_time = 3600 },
+    .{
+        .hit = "NOQUEUE: lost connection after ",
+        .prefix = &.{
+            // stop beating up my poor mail server, witaf is wrong with you?
+            .{ .hit = "binaryedge.ninja[", .heat = 32 },
+        },
+        .heat = 2,
+        .ban_time = 3600,
+    },
 };
 
 pub const trusted_rules: []const Detection = &.{};
@@ -38,6 +47,10 @@ pub fn parseAddr(line: []const u8) !Addr {
     } else if (cutSuffix(u8, line, "]: -1")) |cut| {
         if (findScalarLast(u8, cut, '[')) |i| {
             return try Addr.parse(cut[i + 1 ..]);
+        }
+    } else if (line[line.len - 1] == ']') {
+        if (findScalarLast(u8, line, '[')) |i| {
+            return try Addr.parse(line[i + 1 .. line.len - 1]);
         }
     }
     return error.AddrNotFound;

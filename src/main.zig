@@ -553,6 +553,13 @@ test parseLine {
                 "prod-beryllium-nyc1-56.do.binaryedge.ninja[159.223.112.120]: -1",
         } },
 
+        .{ .abuse = .{
+            .rule = parser.postfix.rules[9].prefix.?[0],
+            .format = .postfix,
+            .line = "Jan 23 20:21:13 gr mail.info postfix/submission/smtpd[8764]: NOQUEUE: lost connection " ++
+                "after EHLO from prod-boron-sfo2-17.do.binaryedge.ninja[206.189.70.220]",
+        } },
+
         // trusted
         .{ .trusted = .{
             .rule = parser.sshd.trusted_rules[0],
@@ -574,6 +581,7 @@ test parseLine {
         .{ .src_addr = .{ .ipv4 = [4]u8{ 162, 218, 52, 165 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 45, 79, 152, 14 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 159, 223, 112, 120 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 206, 189, 70, 220 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 127, 42, 0, 69 } }, .timestamp = 0, .extra = "" },
     };
 
