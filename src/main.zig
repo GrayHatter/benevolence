@@ -146,13 +146,14 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn core(src_files: *FileArray, stdout: *Writer, a: Allocator, io: Io) !void {
-    var now = (try Io.Clock.real.now(io)).toSeconds();
+    var now = Io.Clock.real.now(io).toSeconds();
+    var timer: Io.Timestamp = Io.Clock.awake.now(io);
     for (src_files.items) |*file| {
-        var timer: std.time.Timer = try .start();
+        timer = Io.Clock.awake.now(io);
         const line_count = try drainFile(a, file, now, io);
-        const lap = timer.lap();
+        const lap: Io.Duration = timer.untilNow(io, .awake);
         if (c.damonize orelse true)
-            std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap / 1000_000 });
+            std.debug.print("Done: {} lines in  {}ms\n", .{ line_count, lap.toSeconds() });
     }
 
     if (c.exec_rules) {
@@ -176,7 +177,7 @@ fn core(src_files: *FileArray, stdout: *Writer, a: Allocator, io: Io) !void {
     }
 
     while (watch_list.items.len > 0) {
-        now = (try Io.Clock.real.now(io)).toSeconds();
+        now = Io.Clock.real.now(io).toSeconds();
         for (watch_list.items) |*lf| {
             switch (lf.mode) {
                 .closed => continue,

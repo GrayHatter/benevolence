@@ -4,7 +4,7 @@ reader: File.Reader,
 mode: Mode,
 size: u64,
 only: ?parser.Format = null,
-line_buffer: [0x2000]u8 = undefined,
+line_buffer: [0x8000]u8 = undefined,
 
 const LogFile = @This();
 
