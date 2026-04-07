@@ -2,7 +2,6 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "/.env HTTP/" },
     .{ .hit = "PHP/eval-stdin.php HTTP/1." },
     .{ .hit = "../../etc/passwd HTTP/1" },
-
     .{ .hit = "GET /", .prefix = &[_]Detection{
         .{ .hit = "GET /.git/config " },
         .{ .hit = "GET /config.json HTTP/" },
@@ -27,6 +26,10 @@ pub const rules: []const Detection = &[_]Detection{
         .{ .hit = "GET /database.sql HTTP/" },
     } },
     .{ .hit = "\"PROPFIND / HTTP", .heat = 32, .ban_time = 7 * 86400 },
+    .{ .hit = "GET /db.php HTTP/1.1", .heat = 32, .ban_time = 7 * 86400 },
+    .{ .hit =
+    \\.php HTTP/1.1" 404 146 "-" "-" "-"
+    , .heat = 32, .ban_time = 7 * 86400 },
 };
 
 pub const rules_extra: []const Detection = &[_]Detection{
