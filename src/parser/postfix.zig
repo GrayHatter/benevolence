@@ -4,7 +4,7 @@ pub const rules: []const Detection = &[_]Detection{
     .{ .hit = "NOQUEUE: lost connection after AUTH from", .heat = 8, .ban_time = default },
     .{ .hit = "improper command pipelining after CONNECT from ", .heat = 8, .ban_time = 30 },
     .{ .hit = "ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4", .heat = 8 },
-    .{ .hit = "] ehlo=1 auth=0/1 commands=", .heat = 8 },
+    .{ .hit = "] ehlo=1 auth=0/1 quit=1 commands=", .heat = 32 },
     .{ .hit = "NOQUEUE: lost connection after CONNECT from unknown", .heat = 2, .ban_time = 3600 },
 
     .{ .hit = "Client host rejected: cannot find your reverse hostname", .prefix = &.{

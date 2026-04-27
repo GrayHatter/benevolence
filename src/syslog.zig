@@ -108,7 +108,7 @@ pub fn log(evt: Event, io: Io) !void {
     const addr_len: u32 = @sizeOf(std.posix.sockaddr.un);
     const socket: i32 = @intCast(std.posix.system.socket(std.posix.AF.UNIX, std.posix.SOCK.DGRAM, 0));
     if (std.posix.system.connect(socket, @ptrCast(&addr), addr_len) != 0) return;
-    defer std.posix.close(socket);
+    defer _ = std.posix.system.close(socket);
     var stream: Io.net.Stream = .{ .socket = .{ .handle = socket, .address = .{ .ip4 = .loopback(0) } } };
     var w_b: [0x2ff]u8 = undefined;
     var writer = stream.writer(io, &w_b);

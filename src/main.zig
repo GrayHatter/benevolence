@@ -270,7 +270,7 @@ fn execList(comptime flavor: Target, items: []const u8, a: Allocator, io: Io) !v
 
 fn execBanList(a: Allocator, io: Io, now: i64) !void {
     inline for (Target.items) |flavor| {
-        var list = try genList(flavor, a, now);
+        const list = try genList(flavor, a, now);
         defer a.free(list);
         if (list.len > 4) try execList(flavor, list, a, io);
     }
@@ -278,7 +278,7 @@ fn execBanList(a: Allocator, io: Io, now: i64) !void {
 
 fn printBanList(stdout: *Writer, a: Allocator, now: i64) !void {
     inline for (Target.items) |flavor| {
-        var list = try genList(flavor, a, now);
+        const list = try genList(flavor, a, now);
         defer a.free(list);
         if (list.len > 2) {
             try stdout.print("nft add element inet filter abuse-" ++ @tagName(flavor) ++ " '{s}'\n", .{list});
