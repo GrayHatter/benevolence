@@ -535,27 +535,27 @@ test parseLine {
                 "lip=127.4.20.69, TLS, session=<25Nw4GQ3Ms9QM7WQ>",
         } },
         .{ .abuse = .{
-            .rule = parser.postfix.rules[7].prefix.?[0],
+            .rule = parser.postfix.rules[9].prefix.?[0],
             .format = .postfix,
             .line = "Jul 31 17:13:38 gr mail.info postfix/smtp/smtpd[9566]: NOQUEUE: reject: RCPT from " ++
                 "unknown[162.218.52.165]: 450 4.7.1 Client host rejected: cannot find your reverse hostname," ++
                 " [162.218.52.165]; from=<bounce@jantool.org> to=<banned_email@gr.ht> proto=ESMTP helo=<mail1.jantool.org>",
         } },
         .{ .abuse = .{
-            .rule = parser.postfix.rules[8].prefix.?[0],
+            .rule = parser.postfix.rules[10].prefix.?[0],
             .format = .postfix,
             .line = "Jan 22 18:09:09 gr mail.info postfix/smtps/smtpd[4226]: SSL_accept error from 45-79-152-14.ip" ++
                 ".linodeusercontent.com[45.79.152.14]: -1",
         } },
         .{ .abuse = .{
-            .rule = parser.postfix.rules[8].prefix.?[0],
+            .rule = parser.postfix.rules[10].prefix.?[0],
             .format = .postfix,
             .line = "Jan 23 18:55:55 gr mail.info postfix/smtps/smtpd[8597]: SSL_accept error from " ++
                 "prod-beryllium-nyc1-56.do.binaryedge.ninja[159.223.112.120]: -1",
         } },
 
         .{ .abuse = .{
-            .rule = parser.postfix.rules[9].prefix.?[0],
+            .rule = parser.postfix.rules[11].prefix.?[0],
             .format = .postfix,
             .line = "Jan 23 20:21:13 gr mail.info postfix/submission/smtpd[8764]: NOQUEUE: lost connection " ++
                 "after EHLO from prod-boron-sfo2-17.do.binaryedge.ninja[206.189.70.220]",
