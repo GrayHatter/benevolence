@@ -480,7 +480,7 @@ fn parseLine(mean: Meaningful.Meaning) !?Event {
 }
 
 test parseLine {
-    const log_lines = &[_]Meaningful{
+    const postfix_lines: []const Meaningful = &.{
         .{ .abuse = .{
             .rule = parser.postfix.rules[1],
             .format = .postfix,
@@ -499,40 +499,6 @@ test parseLine {
             .format = .postfix,
             .line = "Jul  3 00:46:09 gr mail.info postfix/smtp/smtpd[10108]: disconnect from " ++
                 "unknown[77.90.185.6] ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4",
-        } },
-        .{ .abuse = .{
-            .rule = parser.nginx.rules[0],
-            .format = .nginx,
-            .line = "149.255.62.135 - - [29/May/2025:23:43:02 +0000] \"GET /.env HTTP/1.1\" 200 " ++
-                "47 \"-\" \"Cpanel-HTTP-Client/1.0\"",
-        } },
-        .{ .abuse = .{
-            .rule = parser.nginx.rules[3].prefix.?[0],
-            .format = .nginx,
-            .line = "185.177.72.104 - - [03/Jul/2025:21:06:55 +0000] \"GET /.git/config HTTP/1.1\" " ++
-                "404 181 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML," ++
-                "like Gecko) Chrome/91.0.4472.124 Safari/537.36\" \"-\"",
-        } },
-        .{ .abuse = .{
-            .rule = parser.nginx.rules[4],
-            .format = .nginx,
-            .line = "68.183.75.104 - - [17/Jan/2026:17:31:37 +0000] \"PROPFIND / HTTP/1.1\" 502 552 " ++
-                "\"http://144.126.209.12:444/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" ++
-                " (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\"",
-        } },
-
-        .{ .abuse = .{
-            .rule = parser.sshd.rules[0],
-            .format = .sshd,
-            .line = "May 29 15:21:53 gr auth.info sshd-session[25292]: Connection closed by " ++
-                "invalid user root 20.64.105.146 port 34292 [preauth]",
-        } },
-        .{ .abuse = .{
-            .rule = parser.dovecot.rules[0],
-            .format = .dovecot,
-            .line = "Jun 12 19:24:38 imap-login: Info: Login aborted: Connection closed " ++
-                "(auth failed, 3 attempts in 15 secs) (auth_failed): user=<eft>, method=PLAIN, rip=80.51.181.144, " ++
-                "lip=127.4.20.69, TLS, session=<25Nw4GQ3Ms9QM7WQ>",
         } },
         .{ .abuse = .{
             .rule = parser.postfix.rules[9].prefix.?[0],
@@ -560,7 +526,48 @@ test parseLine {
             .line = "Jan 23 20:21:13 gr mail.info postfix/submission/smtpd[8764]: NOQUEUE: lost connection " ++
                 "after EHLO from prod-boron-sfo2-17.do.binaryedge.ninja[206.189.70.220]",
         } },
+        .{ .abuse = .{
+            .rule = parser.dovecot.rules[0],
+            .format = .dovecot,
+            .line = "Jun 12 19:24:38 imap-login: Info: Login aborted: Connection closed " ++
+                "(auth failed, 3 attempts in 15 secs) (auth_failed): user=<eft>, method=PLAIN, rip=80.51.181.144, " ++
+                "lip=127.4.20.69, TLS, session=<25Nw4GQ3Ms9QM7WQ>",
+        } },
+    };
 
+    const nginx_lines: []const Meaningful = &.{
+        .{ .abuse = .{
+            .rule = parser.nginx.rules[0],
+            .format = .nginx,
+            .line = "149.255.62.135 - - [29/May/2025:23:43:02 +0000] \"GET /.env HTTP/1.1\" 200 " ++
+                "47 \"-\" \"Cpanel-HTTP-Client/1.0\"",
+        } },
+        .{ .abuse = .{
+            .rule = parser.nginx.rules[3].prefix.?[0],
+            .format = .nginx,
+            .line = "185.177.72.104 - - [03/Jul/2025:21:06:55 +0000] \"GET /.git/config HTTP/1.1\" " ++
+                "404 181 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML," ++
+                "like Gecko) Chrome/91.0.4472.124 Safari/537.36\" \"-\"",
+        } },
+        .{ .abuse = .{
+            .rule = parser.nginx.rules[4],
+            .format = .nginx,
+            .line = "68.183.75.104 - - [17/Jan/2026:17:31:37 +0000] \"PROPFIND / HTTP/1.1\" 502 552 " ++
+                "\"http://144.126.209.12:444/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" ++
+                " (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\"",
+        } },
+    };
+
+    const sshd_lines: []const Meaningful = &.{
+        .{ .abuse = .{
+            .rule = parser.sshd.rules[0],
+            .format = .sshd,
+            .line = "May 29 15:21:53 gr auth.info sshd-session[25292]: Connection closed by " ++
+                "invalid user root 20.64.105.146 port 34292 [preauth]",
+        } },
+    };
+
+    const trusted_lines: []const Meaningful = &.{
         // trusted
         .{ .trusted = .{
             .rule = parser.sshd.trusted_rules[0],
@@ -570,19 +577,26 @@ test parseLine {
         } },
     };
 
+    const log_lines: []const Meaningful = postfix_lines ++ nginx_lines ++ sshd_lines ++ trusted_lines;
+
     const log_hits = &[_]Event{
+        // Postfix
         .{ .src_addr = .{ .ipv4 = [4]u8{ 117, 217, 120, 52 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 117, 217, 120, 52 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 77, 90, 185, 6 } }, .timestamp = 0, .extra = "" },
-        .{ .src_addr = .{ .ipv4 = [4]u8{ 149, 255, 62, 135 } }, .timestamp = 0, .extra = "" },
-        .{ .src_addr = .{ .ipv4 = [4]u8{ 185, 177, 72, 104 } }, .timestamp = 0, .extra = "" },
-        .{ .src_addr = .{ .ipv4 = [4]u8{ 68, 183, 75, 104 } }, .timestamp = 0, .extra = "" },
-        .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 64, 105, 146 } }, .timestamp = 0, .extra = "" },
-        .{ .src_addr = .{ .ipv4 = [4]u8{ 80, 51, 181, 144 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 162, 218, 52, 165 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 45, 79, 152, 14 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 159, 223, 112, 120 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 206, 189, 70, 220 } }, .timestamp = 0, .extra = "" },
+        // dovecot
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 80, 51, 181, 144 } }, .timestamp = 0, .extra = "" },
+        // nginx
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 149, 255, 62, 135 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 185, 177, 72, 104 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 68, 183, 75, 104 } }, .timestamp = 0, .extra = "" },
+        // sshd
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 64, 105, 146 } }, .timestamp = 0, .extra = "" },
+        // trusted
         .{ .src_addr = .{ .ipv4 = [4]u8{ 127, 42, 0, 69 } }, .timestamp = 0, .extra = "" },
     };
 
