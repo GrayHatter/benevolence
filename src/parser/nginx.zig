@@ -26,6 +26,7 @@ pub const rules: []const Detection = &[_]Detection{
             .{ .hit = "GET /keys/config.json HTTP" },
             .{ .hit = "GET /s3/config.json HTTP" },
             .{ .hit = "GET /database.sql HTTP/" },
+            .{ .hit = "GET /.well-known/.well-known/ HTTP/" },
         },
     },
     .{ .hit = "\"PROPFIND / HTTP", .heat = 32, .ban_time = 7 * 86400 },
