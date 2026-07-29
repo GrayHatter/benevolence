@@ -563,6 +563,41 @@ test parseLine {
             \\20.104.18.253 - - [29/Jul/2026:19:49:20 +0000] "GET /.well-known/.well-known/ HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
             ,
         } },
+        .{ .abuse = .{
+            .rule = parser.nginx.rules[3].prefix.?[22],
+            .format = .nginx,
+            .line =
+            \\20.104.18.253 - - [29/Jul/2026:19:49:21 +0000] "GET /.wp-cli/autoload_classmap.php HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
+            ,
+        } },
+        .{ .abuse = .{
+            .rule = parser.nginx.rules[3].prefix.?[23],
+            .format = .nginx,
+            .line =
+            \\20.104.18.253 - - [29/Jul/2026:19:49:21 +0000] "GET /1.php HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
+            ,
+        } },
+        .{ .abuse = .{
+            .rule = parser.nginx.rules[3].prefix.?[24],
+            .format = .nginx,
+            .line =
+            \\20.104.18.253 - - [29/Jul/2026:19:49:21 +0000] "GET /admin.php HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
+            ,
+        } },
+        .{ .abuse = .{
+            .rule = parser.nginx.rules[3].prefix.?[25],
+            .format = .nginx,
+            .line =
+            \\20.104.18.253 - - [29/Jul/2026:19:49:21 +0000] "GET /autoload_classmap.php HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
+            ,
+        } },
+        .{ .abuse = .{
+            .rule = parser.nginx.rules[3].prefix.?[26],
+            .format = .nginx,
+            .line =
+            \\20.104.18.253 - - [29/Jul/2026:19:49:24 +0000] "GET /wp-admin/css/colors/autoload_classmap.php HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
+            ,
+        } },
     };
 
     const sshd_lines: []const Meaningful = &.{
@@ -601,6 +636,11 @@ test parseLine {
         .{ .src_addr = .{ .ipv4 = [4]u8{ 149, 255, 62, 135 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 185, 177, 72, 104 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 68, 183, 75, 104 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 104, 18, 253 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 104, 18, 253 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 104, 18, 253 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 104, 18, 253 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 104, 18, 253 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 104, 18, 253 } }, .timestamp = 0, .extra = "" },
         // sshd
         .{ .src_addr = .{ .ipv4 = [4]u8{ 20, 64, 105, 146 } }, .timestamp = 0, .extra = "" },
