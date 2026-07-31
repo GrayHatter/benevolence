@@ -24,6 +24,7 @@ pub const rules: []const Detection = &[_]Detection{
         .heat = 2,
         .ban_time = 3600,
     },
+    .{ .hit = "Helo command rejected: Host not found;", .heat = 2, .ban_time = 86400 },
 };
 
 pub const trusted_rules: []const Detection = &.{};

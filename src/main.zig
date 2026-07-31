@@ -527,6 +527,16 @@ test parseLine {
                 "after EHLO from prod-boron-sfo2-17.do.binaryedge.ninja[206.189.70.220]",
         } },
         .{ .abuse = .{
+            .rule = parser.postfix.rules[12],
+            .format = .postfix,
+            .line =
+            \\Jul 31 14:06:59 gr mail.info postfix/smtp/smtpd[9782]: NOQUEUE: reject: RCPT from unknown[172.208.70.88]: 450 4.7.1 <wf-smtp-server.mwao1z0aorre1n1wqthclwbk5c.bx.internal.cloudapp.net>: Helo command rejected: Host not found; from=<email@grayhatter.com> to=<email@grayhatter.com> proto=ESMTP helo=<wf-smtp-server.mwao1z0aorre1n1wqthclwbk5c.bx.internal.cloudapp.net>
+            ,
+        } },
+    };
+
+    const dovecot_lines: []const Meaningful = &.{
+        .{ .abuse = .{
             .rule = parser.dovecot.rules[0],
             .format = .dovecot,
             .line = "Jun 12 19:24:38 imap-login: Info: Login aborted: Connection closed " ++
@@ -619,7 +629,7 @@ test parseLine {
         } },
     };
 
-    const log_lines: []const Meaningful = postfix_lines ++ nginx_lines ++ sshd_lines ++ trusted_lines;
+    const log_lines: []const Meaningful = postfix_lines ++ dovecot_lines ++ nginx_lines ++ sshd_lines ++ trusted_lines;
 
     const log_hits = &[_]Event{
         // Postfix
@@ -630,6 +640,7 @@ test parseLine {
         .{ .src_addr = .{ .ipv4 = [4]u8{ 45, 79, 152, 14 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 159, 223, 112, 120 } }, .timestamp = 0, .extra = "" },
         .{ .src_addr = .{ .ipv4 = [4]u8{ 206, 189, 70, 220 } }, .timestamp = 0, .extra = "" },
+        .{ .src_addr = .{ .ipv4 = [4]u8{ 172, 208, 70, 88 } }, .timestamp = 0, .extra = "" },
         // dovecot
         .{ .src_addr = .{ .ipv4 = [4]u8{ 80, 51, 181, 144 } }, .timestamp = 0, .extra = "" },
         // nginx
