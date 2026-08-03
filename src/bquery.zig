@@ -3,7 +3,7 @@ var dbfilename: []const u8 = "./asn_cache.db";
 var host: []const u8 = "localhost"; // this was never valid
 
 pub fn main(init: std.process.Init) !void {
-    const a = init.gpa;
+    const a = init.arena.allocator();
     const io = init.io;
 
     const stdout_fd = std.Io.File.stdout();
@@ -201,6 +201,7 @@ fn usage(comptime errstr: ?[]const u8, w: *Writer) noreturn {
         \\
     ;
     w.print(string, .{arg0}) catch unreachable;
+    w.flush() catch unreachable;
     std.process.exit(1);
 }
 
