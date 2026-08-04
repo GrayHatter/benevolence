@@ -1,10 +1,10 @@
-pub const rules: []const Detection = &[_]Detection{
-    .{ .hit = ": Connection closed by invalid user" },
-    .{ .hit = ": Invalid user" },
+pub const rules: []const Detection = &.{
+    .rule(": Connection closed by invalid user", .{}),
+    .rule(": Invalid user", .{}),
 };
 
 pub const trusted_rules: []const Detection = &.{
-    .{ .hit = "]: Accepted publickey for " },
+    .rule("]: Accepted publickey for ", .{}),
 };
 
 pub fn filter(line: []const u8) bool {

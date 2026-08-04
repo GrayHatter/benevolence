@@ -312,20 +312,20 @@ fn drainFile(a: Allocator, logfile: *LogFile, now: i64, io: Io) !usize {
                 }
                 switch (abuse.format) {
                     .dovecot => {
-                        gop.value_ptr.heat.mail +|= abuse.rule.heat;
-                        gop.value_ptr.time.mail = @max(abuse.rule.ban_time orelse 0, gop.value_ptr.time.mail);
+                        gop.value_ptr.heat.mail +|= abuse.rule.opt.heat;
+                        gop.value_ptr.time.mail = @max(abuse.rule.opt.ban_time orelse 0, gop.value_ptr.time.mail);
                     },
                     .nginx => {
-                        gop.value_ptr.heat.http +|= abuse.rule.heat;
-                        gop.value_ptr.time.http = @max(abuse.rule.ban_time orelse 0, gop.value_ptr.time.http);
+                        gop.value_ptr.heat.http +|= abuse.rule.opt.heat;
+                        gop.value_ptr.time.http = @max(abuse.rule.opt.ban_time orelse 0, gop.value_ptr.time.http);
                     },
                     .postfix => {
-                        gop.value_ptr.heat.mail +|= abuse.rule.heat;
-                        gop.value_ptr.time.mail = @max(abuse.rule.ban_time orelse 0, gop.value_ptr.time.mail);
+                        gop.value_ptr.heat.mail +|= abuse.rule.opt.heat;
+                        gop.value_ptr.time.mail = @max(abuse.rule.opt.ban_time orelse 0, gop.value_ptr.time.mail);
                     },
                     .sshd => {
-                        gop.value_ptr.heat.sshd +|= abuse.rule.heat;
-                        gop.value_ptr.time.sshd = @max(abuse.rule.ban_time orelse 0, gop.value_ptr.time.sshd);
+                        gop.value_ptr.heat.sshd +|= abuse.rule.opt.heat;
+                        gop.value_ptr.time.sshd = @max(abuse.rule.opt.ban_time orelse 0, gop.value_ptr.time.sshd);
                     },
                 }
             },
@@ -402,16 +402,22 @@ fn scanRules(comptime fmt: parser.Format, line: []const u8) ?Meaningful.Meaning 
     });
 
     inline for (comptime rules.get(fmt)) |rule| {
-        if (indexOf(u8, line, rule.hit)) |i| {
+        if (find(u8, line, rule.hit)) |i| {
             if (rule.prefix) |prefix| {
                 inline for (prefix) |branch| {
-                    if (indexOf(u8, line[i..], branch.hit)) |_| {
+                    if (find(u8, line[i..], branch.hit)) |_| {
                         return .{ .abuse = .{ .format = fmt, .rule = rule, .line = line } };
                     }
                 }
             } else return .{ .abuse = .{ .format = fmt, .rule = rule, .line = line } };
         }
     }
+}
+
+fn testHit(input: []const u8, rule: Detection) bool {
+    _ = input;
+    _ = rule;
+    return false;
 }
 
 fn findHit(line: []const u8) ?Meaningful {
@@ -429,33 +435,35 @@ fn findHit(line: []const u8) ?Meaningful {
         .sshd = parser.sshd.trusted_rules,
     });
 
-    if (indexOf(u8, line, "auth.warn benevolence") != null) return null;
+    if (find(u8, line, "auth.warn benevolence") != null) return null;
 
     inline for (parser.Format.fields) |pf_field| {
         if (parser.Filters.get(pf_field)(line)) {
             inline for (comptime rules.get(pf_field)) |rule| {
-                if (indexOf(u8, line, rule.hit)) |i| {
-                    if (rule.prefix) |prefix| {
-                        inline for (prefix) |branch| {
-                            if (indexOf(u8, line[i..], branch.hit)) |_| {
-                                return .{ .abuse = .{ .format = pf_field, .rule = branch, .line = line } };
-                            }
+                switch (rule.hit) {
+                    .direct => |direct| if (find(u8, line, direct)) |_| {
+                        return .{ .abuse = .{ .format = pf_field, .rule = rule, .line = line } };
+                    },
+                    .prefix => |both| {
+                        const direct: []const u8, const pre_list: []const Detection = both;
+                        if (find(u8, line, direct)) |i| {
+                            inline for (pre_list) |pre| if (find(u8, line[i..], pre.hit.direct)) |_| {
+                                return .{ .abuse = .{ .format = pf_field, .rule = pre, .line = line } };
+                            };
                         }
-                    } else return .{ .abuse = .{ .format = pf_field, .rule = rule, .line = line } };
-                }
-            }
-            inline for (comptime trusted_rules.get(pf_field)) |rule| {
-                if (indexOf(u8, line, rule.hit)) |i| {
-                    if (rule.prefix) |prefix| {
-                        inline for (prefix) |branch| {
-                            if (indexOf(u8, line[i..], branch.hit)) |_| {
-                                return .{ .trusted = .{ .format = pf_field, .rule = rule, .line = line } };
-                            }
-                        }
-                    } else return .{ .trusted = .{ .format = pf_field, .rule = rule, .line = line } };
+                    },
                 }
             }
         }
+
+        inline for (comptime trusted_rules.get(pf_field)) |rule| switch (rule.hit) {
+            .direct => |direct| if (find(u8, line, direct)) |_|
+                return .{ .trusted = .{ .format = pf_field, .rule = rule, .line = line } },
+            .prefix => |prefix| inline for (prefix) |branch| {
+                if (find(u8, line, branch.hit)) |_|
+                    return .{ .trusted = .{ .format = pf_field, .rule = rule, .line = line } };
+            },
+        };
     }
 
     return null;
@@ -495,39 +503,39 @@ test parseLine {
                 "sasl_username=gwe@gr.ht",
         } },
         .{ .abuse = .{
-            .rule = parser.postfix.rules[4],
+            .rule = parser.postfix.rules[4].hit.prefix[1][0],
             .format = .postfix,
             .line = "Jul  3 00:46:09 gr mail.info postfix/smtp/smtpd[10108]: disconnect from " ++
                 "unknown[77.90.185.6] ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4",
         } },
         .{ .abuse = .{
-            .rule = parser.postfix.rules[9].prefix.?[0],
+            .rule = parser.postfix.rules[7].hit.prefix[1][0],
             .format = .postfix,
             .line = "Jul 31 17:13:38 gr mail.info postfix/smtp/smtpd[9566]: NOQUEUE: reject: RCPT from " ++
                 "unknown[162.218.52.165]: 450 4.7.1 Client host rejected: cannot find your reverse hostname," ++
                 " [162.218.52.165]; from=<bounce@jantool.org> to=<banned_email@gr.ht> proto=ESMTP helo=<mail1.jantool.org>",
         } },
         .{ .abuse = .{
-            .rule = parser.postfix.rules[10].prefix.?[0],
+            .rule = parser.postfix.rules[8].hit.prefix[1][0],
             .format = .postfix,
             .line = "Jan 22 18:09:09 gr mail.info postfix/smtps/smtpd[4226]: SSL_accept error from 45-79-152-14.ip" ++
                 ".linodeusercontent.com[45.79.152.14]: -1",
         } },
         .{ .abuse = .{
-            .rule = parser.postfix.rules[10].prefix.?[0],
+            .rule = parser.postfix.rules[8].hit.prefix[1][0],
             .format = .postfix,
             .line = "Jan 23 18:55:55 gr mail.info postfix/smtps/smtpd[8597]: SSL_accept error from " ++
                 "prod-beryllium-nyc1-56.do.binaryedge.ninja[159.223.112.120]: -1",
         } },
 
         .{ .abuse = .{
-            .rule = parser.postfix.rules[11].prefix.?[0],
+            .rule = parser.postfix.rules[9].hit.prefix[1][0],
             .format = .postfix,
             .line = "Jan 23 20:21:13 gr mail.info postfix/submission/smtpd[8764]: NOQUEUE: lost connection " ++
                 "after EHLO from prod-boron-sfo2-17.do.binaryedge.ninja[206.189.70.220]",
         } },
         .{ .abuse = .{
-            .rule = parser.postfix.rules[12],
+            .rule = parser.postfix.rules[10],
             .format = .postfix,
             .line =
             \\Jul 31 14:06:59 gr mail.info postfix/smtp/smtpd[9782]: NOQUEUE: reject: RCPT from unknown[172.208.70.88]: 450 4.7.1 <wf-smtp-server.mwao1z0aorre1n1wqthclwbk5c.bx.internal.cloudapp.net>: Helo command rejected: Host not found; from=<email@grayhatter.com> to=<email@grayhatter.com> proto=ESMTP helo=<wf-smtp-server.mwao1z0aorre1n1wqthclwbk5c.bx.internal.cloudapp.net>
@@ -553,7 +561,7 @@ test parseLine {
                 "47 \"-\" \"Cpanel-HTTP-Client/1.0\"",
         } },
         .{ .abuse = .{
-            .rule = parser.nginx.rules[3].prefix.?[0],
+            .rule = parser.nginx.rules[3].hit.prefix[1][0],
             .format = .nginx,
             .line = "185.177.72.104 - - [03/Jul/2025:21:06:55 +0000] \"GET /.git/config HTTP/1.1\" " ++
                 "404 181 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML," ++
@@ -567,42 +575,42 @@ test parseLine {
                 " (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\"",
         } },
         .{ .abuse = .{
-            .rule = parser.nginx.rules[3].prefix.?[21],
+            .rule = parser.nginx.rules[3].hit.prefix[1][21],
             .format = .nginx,
             .line =
             \\20.104.18.253 - - [29/Jul/2026:19:49:20 +0000] "GET /.well-known/.well-known/ HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
             ,
         } },
         .{ .abuse = .{
-            .rule = parser.nginx.rules[3].prefix.?[22],
+            .rule = parser.nginx.rules[3].hit.prefix[1][22],
             .format = .nginx,
             .line =
             \\20.104.18.253 - - [29/Jul/2026:19:49:21 +0000] "GET /.wp-cli/autoload_classmap.php HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
             ,
         } },
         .{ .abuse = .{
-            .rule = parser.nginx.rules[3].prefix.?[23],
+            .rule = parser.nginx.rules[3].hit.prefix[1][23],
             .format = .nginx,
             .line =
             \\20.104.18.253 - - [29/Jul/2026:19:49:21 +0000] "GET /1.php HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
             ,
         } },
         .{ .abuse = .{
-            .rule = parser.nginx.rules[3].prefix.?[24],
+            .rule = parser.nginx.rules[3].hit.prefix[1][24],
             .format = .nginx,
             .line =
             \\20.104.18.253 - - [29/Jul/2026:19:49:21 +0000] "GET /admin.php HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
             ,
         } },
         .{ .abuse = .{
-            .rule = parser.nginx.rules[3].prefix.?[25],
+            .rule = parser.nginx.rules[3].hit.prefix[1][25],
             .format = .nginx,
             .line =
             \\20.104.18.253 - - [29/Jul/2026:19:49:21 +0000] "GET /autoload_classmap.php HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
             ,
         } },
         .{ .abuse = .{
-            .rule = parser.nginx.rules[3].prefix.?[26],
+            .rule = parser.nginx.rules[3].hit.prefix[1][26],
             .format = .nginx,
             .line =
             \\20.104.18.253 - - [29/Jul/2026:19:49:24 +0000] "GET /wp-admin/css/colors/autoload_classmap.php HTTP/1.1" 404 181 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "-"
@@ -659,20 +667,23 @@ test parseLine {
         .{ .src_addr = .{ .ipv4 = [4]u8{ 127, 42, 0, 69 } }, .timestamp = 0, .extra = "" },
     };
 
-    for (log_lines, log_hits) |log, expected_hit| {
+    for (log_lines, log_hits, 0..) |log, expected_hit, i| {
         const log_meaning = switch (log) {
             inline else => |m| m,
         };
         const hit = findHit(log_meaning.line);
 
-        try std.testing.expectEqualDeep(log, hit);
+        std.testing.expectEqualDeep(log, hit) catch |err| {
+            std.debug.print("missmatch on row {}\n", .{i});
+            return err;
+        };
         const meaning: Meaningful.Meaning = switch (hit.?) {
             inline else => |m| m,
         };
         try std.testing.expectEqualStrings(log_meaning.line, meaning.line);
         try std.testing.expectEqualDeep(expected_hit, parseLine(log_meaning));
         try std.testing.expectEqualDeep(log_meaning.rule, meaning.rule);
-        try std.testing.expectEqualDeep(log_meaning.rule.heat, meaning.rule.heat);
+        try std.testing.expectEqualDeep(log_meaning.rule.opt.heat, meaning.rule.opt.heat);
     }
 }
 
@@ -703,7 +714,7 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayListUnmanaged;
 const FileArray = ArrayList(LogFile);
 const Writer = std.Io.Writer;
-const indexOf = std.mem.indexOf;
+const find = std.mem.find;
 const startsWith = std.mem.startsWith;
 const eql = std.mem.eql;
 const builtin = @import("builtin");

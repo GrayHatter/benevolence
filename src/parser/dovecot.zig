@@ -1,6 +1,6 @@
 pub const rules: []const Detection = &[_]Detection{
-    .{ .hit = "(auth_failed): user" },
-    .{ .hit = "Connection closed (auth failed," },
+    .rule("(auth_failed): user", .{}),
+    .rule("Connection closed (auth failed,", .{}),
 };
 
 pub const trusted_rules: []const Detection = &.{};

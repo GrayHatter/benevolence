@@ -1,30 +1,32 @@
 pub const rules: []const Detection = &[_]Detection{
-    .{ .hit = "SASL LOGIN authentication failed", .heat = 32, .ban_time = default },
-    .{ .hit = "SASL PLAIN authentication failed", .heat = 32, .ban_time = default },
-    .{ .hit = "NOQUEUE: lost connection after AUTH from", .heat = 8, .ban_time = default },
-    .{ .hit = "improper command pipelining after CONNECT from ", .heat = 8, .ban_time = 30 },
-    .{ .hit = "ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4", .heat = 8 },
-    .{ .hit = "ehlo=1 auth=0/1 quit=1 commands=2/3", .heat = 8 },
-    .{ .hit = "ehlo=1 auth=0/1 commands=1/2", .heat = 8 },
-    .{ .hit = "] ehlo=1 auth=0/1 quit=1 commands=", .heat = 32 },
-    .{ .hit = "NOQUEUE: lost connection after CONNECT from unknown", .heat = 2, .ban_time = 3600 },
-
-    .{ .hit = "Client host rejected: cannot find your reverse hostname", .prefix = &.{
-        .{ .hit = " to=<banned_email@gr.ht>", .heat = 16, .ban_time = 3600 * 2 },
-    }, .heat = 0, .ban_time = 0 },
-    .{ .hit = "SSL_accept error from ", .prefix = &.{
-        .{ .hit = "-1", .heat = 32, .ban_time = 10 },
-    }, .heat = 2, .ban_time = 3600 },
-    .{
-        .hit = "NOQUEUE: lost connection after ",
-        .prefix = &.{
-            // stop beating up my poor mail server, witaf is wrong with you?
-            .{ .hit = "binaryedge.ninja[", .heat = 32 },
-        },
-        .heat = 2,
-        .ban_time = 3600,
-    },
-    .{ .hit = "Helo command rejected: Host not found;", .heat = 2, .ban_time = 86400 },
+    .rule("SASL LOGIN authentication failed", .{ .heat = 32, .ban_time = default }),
+    .rule("SASL PLAIN authentication failed", .{ .heat = 32, .ban_time = default }),
+    .rule("NOQUEUE: lost connection after AUTH from", .{ .heat = 8, .ban_time = default }),
+    .rule("improper command pipelining after CONNECT from ", .{ .heat = 8, .ban_time = 30 }),
+    .prefix("ehlo=1 auth=0/1", &.{
+        .rule("ehlo=1 auth=0/1 rset=1 quit=1 commands=3/4", .{ .heat = 8 }),
+        .rule("ehlo=1 auth=0/1 quit=1 commands=2/3", .{ .heat = 8 }),
+        .rule("ehlo=1 auth=0/1 commands=1/2", .{ .heat = 8 }),
+    }, .{}),
+    .rule("] ehlo=1 auth=0/1 quit=1 commands=", .{ .heat = 32 }),
+    .rule("NOQUEUE: lost connection after CONNECT from unknown", .{ .heat = 2, .ban_time = 3600 }),
+    .prefix(
+        "Client host rejected: cannot find your reverse hostname",
+        &.{.rule(" to=<banned_email@gr.ht>", .{ .heat = 16, .ban_time = 3600 * 2 })},
+        .{ .heat = 0, .ban_time = 0 },
+    ),
+    .prefix(
+        "SSL_accept error from ",
+        &.{.rule("-1", .{ .heat = 32, .ban_time = 10 })},
+        .{ .heat = 2, .ban_time = 3600 },
+    ),
+    .prefix(
+        "NOQUEUE: lost connection after ",
+        // stop beating up my poor mail server, witaf is wrong with you?
+        &.{.rule("binaryedge.ninja[", .{ .heat = 32 })},
+        .{ .heat = 2, .ban_time = 3600 },
+    ),
+    .rule("Helo command rejected: Host not found;", .{ .heat = 2, .ban_time = 86400 }),
 };
 
 pub const trusted_rules: []const Detection = &.{};
