@@ -30,6 +30,7 @@ pub const rules: []const Detection = &[_]Detection{
         .rule("GET /admin.php HTTP/1.1\" 404", .{}),
         .rule("GET /autoload_classmap.php HTTP/1", .{}),
         .rule("GET /wp-admin/css/colors/autoload_classmap.php HTTP/1", .{}),
+        .rule("GET /mcp/ HTTP/1", .{}),
     }, .{}),
 
     .rule("\"PROPFIND / HTTP", .{ .heat = 32, .ban_time = 7 * 86400 }),
